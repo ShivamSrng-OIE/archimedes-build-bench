@@ -33,24 +33,41 @@ class UsageBudget:
             + self.output_tokens * self.output_rate_per_million
         ) / 1_000_000
 
-    def authorize(self, *, strong: bool, estimated_input_tokens: int, reserve_output_tokens: int = 1000) -> None:
+    def authorize(
+        self,
+        *,
+        strong: bool,
+        estimated_input_tokens: int,
+        reserve_output_tokens: int = 1000,
+        reserve_calls: int = 1,
+    ) -> None:
         """Fail before an optional call that would exceed a configured resource gate."""
-        if self.calls >= self.max_calls:
+        if self.calls + reserve_calls > self.max_calls:
             raise BudgetExhaustedError("total model-call budget exhausted")
-        if strong and self.strong_calls >= self.max_strong_calls:
+        if strong and self.strong_calls + reserve_calls > self.max_strong_calls:
             raise BudgetExhaustedError("strong-model call budget exhausted")
-        if self.input_tokens + self.output_tokens + estimated_input_tokens + reserve_output_tokens > self.max_tokens:
+        if (
+            self.input_tokens
+            + self.output_tokens
+            + estimated_input_tokens * reserve_calls
+            + reserve_output_tokens * reserve_calls
+            > self.max_tokens
+        ):
             raise BudgetExhaustedError("approximate token budget exhausted")
         if self.max_cost_usd is not None and self.input_rate_per_million is not None and self.output_rate_per_million is not None:
             projected = (
-                (self.input_tokens + estimated_input_tokens) * self.input_rate_per_million
-                + (self.output_tokens + reserve_output_tokens) * self.output_rate_per_million
+                (self.input_tokens + estimated_input_tokens * reserve_calls)
+                * self.input_rate_per_million
+                + (self.output_tokens + reserve_output_tokens * reserve_calls)
+                * self.output_rate_per_million
             ) / 1_000_000
             if projected > self.max_cost_usd:
                 raise BudgetExhaustedError("estimated monetary budget would be exceeded")
 
-    def record(self, *, strong: bool, input_tokens: int, output_tokens: int) -> None:
-        self.calls += 1
-        self.strong_calls += int(strong)
+    def record(
+        self, *, strong: bool, input_tokens: int, output_tokens: int, calls: int = 1
+    ) -> None:
+        self.calls += calls
+        self.strong_calls += calls if strong else 0
         self.input_tokens += max(0, input_tokens)
         self.output_tokens += max(0, output_tokens)

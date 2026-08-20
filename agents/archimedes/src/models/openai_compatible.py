@@ -61,6 +61,7 @@ class OpenAICompatibleModelClient:
         system_prompt: str,
         user_prompt: str,
         timeout_seconds: float,
+        allow_repair_retry: bool = True,
     ) -> ModelResponse:
         model = self._models[tier]
         messages: list[JSONValue] = [
@@ -76,24 +77,52 @@ class OpenAICompatibleModelClient:
         started = time.monotonic()
         response = self._request(payload, timeout_seconds)
         raw = self._content(response)
+        responses = [(response, len(system_prompt) + len(user_prompt), len(raw))]
         try:
             parsed = parse_model_json(raw, task)
-        except ModelProtocolError:
+        except ModelProtocolError as error:
+            if not allow_repair_retry:
+                raise
             repair_payload = dict(payload)
             repair_payload["messages"] = [
                 *messages,
                 {"role": "assistant", "content": raw},
-                {"role": "user", "content": "Return only one corrected JSON object satisfying every required key."},
+                {
+                    "role": "user",
+                    "content": (
+                        f"The previous object was rejected because: {error}. "
+                        "Return only one corrected JSON object satisfying every required field "
+                        "and type in the system contract. Do not rename or omit required fields."
+                    ),
+                },
             ]
             response = self._request(repair_payload, timeout_seconds)
             raw = self._content(response)
+            responses.append((response, len(json.dumps(repair_payload)), len(raw)))
             parsed = parse_model_json(raw, task)
         latency = time.monotonic() - started
-        usage = response.get("usage", {})
-        fallback_input = max(1, (len(system_prompt) + len(user_prompt)) // 4)
-        fallback_output = max(1, len(raw) // 4)
-        input_value = usage.get("prompt_tokens") if isinstance(usage, dict) else None
-        output_value = usage.get("completion_tokens") if isinstance(usage, dict) else None
-        input_tokens = int(input_value) if isinstance(input_value, (str, int, float)) else fallback_input
-        output_tokens = int(output_value) if isinstance(output_value, (str, int, float)) else fallback_output
-        return ModelResponse(parsed, raw, model, input_tokens, output_tokens, latency)
+        input_tokens = 0
+        output_tokens = 0
+        for item, input_characters, output_characters in responses:
+            usage = item.get("usage", {})
+            input_value = usage.get("prompt_tokens") if isinstance(usage, dict) else None
+            output_value = usage.get("completion_tokens") if isinstance(usage, dict) else None
+            input_tokens += (
+                int(input_value)
+                if isinstance(input_value, (str, int, float))
+                else max(1, input_characters // 4)
+            )
+            output_tokens += (
+                int(output_value)
+                if isinstance(output_value, (str, int, float))
+                else max(1, output_characters // 4)
+            )
+        return ModelResponse(
+            parsed,
+            raw,
+            model,
+            input_tokens,
+            output_tokens,
+            latency,
+            provider_requests=len(responses),
+        )

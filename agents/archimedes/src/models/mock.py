@@ -27,7 +27,9 @@ class MockModelClient:
         system_prompt: str,
         user_prompt: str,
         timeout_seconds: float,
+        allow_repair_retry: bool = True,
     ) -> ModelResponse:
+        del allow_repair_retry
         if task not in self._responses:
             raise ModelError(f"no mock response configured for task {task.value}")
         fixture = self._responses[task]

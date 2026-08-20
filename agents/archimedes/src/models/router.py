@@ -49,22 +49,35 @@ class ModelRouter:
             ModelTier.STRONG if signals and signals.requires_strong() else ModelTier.FAST
         )
         estimated = approximate_tokens(system_prompt + user_prompt)
-        self.budget.authorize(strong=tier is ModelTier.STRONG, estimated_input_tokens=estimated)
+        remaining_requests = self.budget.max_calls - self.budget.calls
+        if tier is ModelTier.STRONG:
+            remaining_requests = min(
+                remaining_requests,
+                self.budget.max_strong_calls - self.budget.strong_calls,
+            )
+        reserved_requests = 2 if remaining_requests >= 2 else 1
+        self.budget.authorize(
+            strong=tier is ModelTier.STRONG,
+            estimated_input_tokens=estimated,
+            reserve_calls=reserved_requests,
+        )
         response = self.client.complete_json(
             task=task,
             tier=tier,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             timeout_seconds=self.timeout_seconds,
+            allow_repair_retry=reserved_requests == 2,
         )
         self.budget.record(
             strong=tier is ModelTier.STRONG,
             input_tokens=response.input_tokens,
             output_tokens=response.output_tokens,
+            calls=response.provider_requests,
         )
         self.records.append(ModelCallRecord(
             task, tier, len(system_prompt) + len(user_prompt), len(response.raw_text),
-            response.latency_seconds, response.parsed,
+            response.latency_seconds, response.parsed, response.provider_requests,
         ))
         return response
 

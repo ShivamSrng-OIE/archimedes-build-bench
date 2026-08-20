@@ -12,6 +12,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,19 @@ FEATURE_DEFAULTS = {
     "ENABLE_FAILURE_FRONTIER": "true",
     "ARCHIMEDES_CONTEXT_MODE": "archimedes_selected_context",
 }
+
+_SENSITIVE_OUTPUT = re.compile(
+    r"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?|api[_-]?key\s*[:=]\s*|"
+    r"password\s*[:=]\s*|token\s*[:=]\s*)[^\s,;]+"
+)
+
+
+def safe_error_summary(stderr: str, *, max_characters: int = 3000) -> str | None:
+    """Retain a bounded diagnostic tail without copying credentials into result tables."""
+    if not stderr.strip():
+        return None
+    redacted = _SENSITIVE_OUTPUT.sub(lambda match: f"{match.group(1)}[REDACTED]", stderr)
+    return redacted[-max_characters:]
 
 
 def git_commit() -> str:
@@ -67,6 +81,8 @@ def run_case(
     config_env: dict[str, str],
     seed: int,
     trace_dir: Path | None = None,
+    artifact_dir: Path | None = None,
+    case_timeout_seconds: float = 120,
 ) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="archimedes-eval-") as temp_name:
         workspace = Path(temp_name)
@@ -87,7 +103,10 @@ def run_case(
         environment["ARCHIMEDES_RANDOM_SEED"] = str(seed)
         completed = subprocess.run(
             [sys.executable, "-m", "src.main"], cwd=AGENT, env=environment,
-            capture_output=True, text=True, timeout=120, check=False,
+            capture_output=True,
+            text=True,
+            timeout=case_timeout_seconds,
+            check=False,
         )
         metrics_path = output_dir / "metrics.json"
         metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
@@ -100,6 +119,22 @@ def run_case(
             destination = trace_dir / f"{metadata['case_id']}-{configuration}.jsonl"
             shutil.copy2(trace_path, destination)
             persisted_trace = str(destination)
+        persisted_artifacts: str | None = None
+        if artifact_dir is not None:
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            base = artifact_dir / f"{metadata['case_id']}-{configuration}"
+            destination = base
+            suffix = 1
+            while destination.exists():
+                suffix += 1
+                destination = artifact_dir / f"{base.name}-{suffix}"
+            shutil.copytree(workspace, destination)
+            summary = safe_error_summary(completed.stderr)
+            if summary:
+                (destination / "agent-error-summary.log").write_text(
+                    summary, encoding="utf-8"
+                )
+            persisted_artifacts = str(destination)
         modified = result.get("modified_paths", [])
         expected_file = metadata["expected_causal_file"]
         tier_mode = environment.get("ARCHIMEDES_MODEL_TIER", "auto")
@@ -123,6 +158,9 @@ def run_case(
             "target_arch": metadata["target_architecture"],
             "failure_family": metadata["failure_family"],
             "agent_exit_code": completed.returncode,
+            "agent_error_summary": (
+                safe_error_summary(completed.stderr) if completed.returncode else None
+            ),
             "expected_causal_mechanism_identified": expected_file in modified,
             "expected_repair_family_selected": metrics.get("selected_repair_family") == metadata["expected_repair_family"],
             "verified_build_success": None,
@@ -141,6 +179,7 @@ def run_case(
             "seed": seed,
             "case_content_sha256": hashlib.sha256((case_dir / "case.json").read_bytes()).hexdigest(),
             "trace_path": persisted_trace,
+            "artifact_path": persisted_artifacts,
         }
 
 
@@ -169,10 +208,29 @@ def main() -> int:
         type=Path,
         help="copy each local execution trace to this development-only directory",
     )
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        help="retain each development workspace for source/diagnostic inspection",
+    )
+    parser.add_argument(
+        "--case-timeout-seconds",
+        type=float,
+        default=120,
+        help="per-case agent-process timeout (increase for slow local models)",
+    )
     args = parser.parse_args()
     config_env = load_configuration(args.configuration)
     rows = [
-        run_case(path, args.configuration, config_env, args.seed, args.trace_dir)
+        run_case(
+            path,
+            args.configuration,
+            config_env,
+            args.seed,
+            args.trace_dir,
+            args.artifact_dir,
+            args.case_timeout_seconds,
+        )
         for path in select_cases(args.cases)
     ]
     write_results(args.output, rows)

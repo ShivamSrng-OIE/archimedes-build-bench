@@ -33,6 +33,7 @@ class ModelResponse:
     output_tokens: int
     latency_seconds: float
     parsed: bool = True
+    provider_requests: int = 1
 
 
 @dataclass(slots=True)
@@ -43,6 +44,7 @@ class ModelCallRecord:
     response_size: int
     latency_seconds: float
     parsed: bool
+    provider_requests: int = 1
     changed_hypothesis: bool = False
     caused_probe: bool = False
     caused_patch: bool = False
@@ -58,4 +60,5 @@ class ModelClient(Protocol):
         system_prompt: str,
         user_prompt: str,
         timeout_seconds: float,
+        allow_repair_retry: bool = True,
     ) -> ModelResponse: ...

@@ -14,6 +14,13 @@ from .schemas import JSONValue
 
 
 _SENSITIVE_KEYS = ("api_key", "apikey", "authorization", "credential", "password", "secret", "token")
+_SAFE_TOKEN_TELEMETRY_KEYS = {
+    "input_tokens",
+    "output_tokens",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+}
 
 
 def _safe_value(value: object) -> JSONValue:
@@ -33,7 +40,11 @@ def _safe_value(value: object) -> JSONValue:
 
 def _safe_attribute(key: object, value: object) -> tuple[str, JSONValue]:
     safe_key = str(key)[:100]
-    if any(marker in safe_key.lower() for marker in _SENSITIVE_KEYS):
+    normalized_key = safe_key.lower()
+    if (
+        normalized_key not in _SAFE_TOKEN_TELEMETRY_KEYS
+        and any(marker in normalized_key for marker in _SENSITIVE_KEYS)
+    ):
         return safe_key, "[REDACTED]"
     return safe_key, _safe_value(value)
 

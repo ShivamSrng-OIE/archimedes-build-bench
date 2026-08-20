@@ -17,6 +17,7 @@ Examples:
 python dev/evaluate.py --configuration A --case unconditional_x86_sse_flag --output dev/pilot.jsonl
 python dev/evaluate.py --configuration K --output dev/full-synthetic.csv
 python dev/evaluate.py --configuration K --case unconditional_x86_sse_flag --trace-dir dev/traces
+python dev/evaluate.py --configuration C --case unconditional_x86_sse_flag --artifact-dir runs/model-artifacts
 python dev/trace_viewer.py dev/traces/unconditional-x86-sse-flag-K.jsonl --output dev/trace.html
 ```
 
@@ -25,6 +26,11 @@ require an explicitly configured remote endpoint/model and force the STRONG tier
 cost-controlled pilots. A and K remain usable without a provider, and K accepts caller-selected
 provider settings. Use `ARCHIMEDES_CONTEXT_MODE=raw_context` with K for the capped raw-vs-selected
 context experiment.
+
+Use `--artifact-dir` for small model pilots when the actual guarded worktree and diagnostics must be
+inspected. Artifacts are stored under ignored `runs/` paths by convention and are never bundled.
+Slow local models can use `--case-timeout-seconds 240`; the agent's individual request timeout
+remains independently bounded by `ARCHIMEDES_MODEL_TIMEOUT_SECONDS`.
 
 Every agent run writes a bounded `output/execution-trace.jsonl` by default. The trace records the
 controller stages, evidence counts, hypothesis/probe decisions, candidate review, build requests,

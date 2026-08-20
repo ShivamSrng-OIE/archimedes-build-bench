@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from ..schemas import PatchCandidate, RepairFamily
 
 
@@ -13,10 +15,14 @@ def portability_findings(candidate: PatchCandidate) -> list[str]:
         findings.append("critical assumption confidence is below 0.80")
     replacement = "\n".join(edit.replacement.lower() for edit in candidate.planned_edits)
     if candidate.repair_family is RepairFamily.CONDITIONAL_COMPILER_FLAG:
-        if not any(token in replacement for token in ("ifneq", "if(", "#if")):
+        if not any(token in replacement for token in ("ifneq", "ifeq", "if(", "#if")):
             findings.append("architecture-specific flag is not guarded")
     if "-msse" in replacement and "aarch64" in replacement:
         findings.append("x86 SSE option appears enabled for aarch64")
+    if "-dumpmachine" in replacement and re.search(
+        r"\$\(\s*filter\s+(?:x86_64|amd64)\s*,", replacement
+    ):
+        findings.append("compiler target triple is compared to an exact architecture name")
     return findings
 
 

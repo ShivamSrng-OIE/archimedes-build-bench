@@ -396,6 +396,73 @@ class RepairController:
             ))
         return select_snippets(snippets, max_characters=24_000)
 
+    def _model_causal_findings(self, failure: object, candidate: object) -> list[str]:
+        """Reject plans that add an alternative but leave a diagnosed flag active."""
+        from ..schemas import FailureAnalysis, PatchCandidate
+
+        assert isinstance(failure, FailureAnalysis) and isinstance(candidate, PatchCandidate)
+        options = list(dict.fromkeys(re.findall(
+            r"(?<![A-Za-z0-9_])-(?:m(?:sse[0-9.]*|avx[0-9.]*|neon)\b|"
+            r"(?:march|mcpu|mtune|mabi|mfpu)=[^\s'\"`]+)",
+            failure.primary_diagnostic,
+            flags=re.I,
+        )))
+        findings: list[str] = []
+        guard_markers = ("ifneq", "ifeq", "if(", "#if", "check_c_compiler_flag")
+        target_markers = (
+            "-dumpmachine",
+            "check_c_compiler_flag",
+            "cmake_system_processor",
+            "target_compile_options",
+            "%ifarch",
+            "__x86_64__",
+            "__amd64__",
+        )
+        for option in options:
+            matches = search_regex(
+                self.workspace.repo,
+                re.escape(option),
+                reason="diagnosed compiler-option provenance",
+                max_results=20,
+            )
+            for match in matches:
+                replacements = [
+                    edit
+                    for edit in candidate.planned_edits
+                    if edit.path == match.path
+                    and edit.operation == "replace_lines"
+                    and isinstance(edit.expected_text, str)
+                    and option.lower() in edit.expected_text.lower()
+                ]
+                if not replacements:
+                    findings.append(
+                        f"plan leaves diagnosed option {option} active at "
+                        f"{match.path}:{match.line_start}"
+                    )
+                    continue
+                for edit in replacements:
+                    replacement = edit.replacement.lower()
+                    if option.lower() in replacement and not any(
+                        marker in replacement for marker in guard_markers
+                    ):
+                        findings.append(
+                            f"replacement keeps {option} without a target or capability guard"
+                        )
+                    elif option.lower() in replacement and not any(
+                        marker in replacement for marker in target_markers
+                    ):
+                        findings.append(
+                            f"guard for {option} is not derived from compiler-target or capability evidence"
+                        )
+                    elif option.lower() in replacement and re.search(
+                        r"\$\(\s*filter\s+(?:x86_64|amd64)\s*,", replacement
+                    ):
+                        findings.append(
+                            f"guard for {option} compares a full compiler target triple to an "
+                            "exact architecture name; use an architecture-prefix wildcard"
+                        )
+        return findings
+
     def _consult_model_if_configured(
         self, case: object, failure: object, ledger: EvidenceLedger
     ):
@@ -466,38 +533,62 @@ class RepairController:
             f"target_architecture={case.target_architecture.raw}\n"
             f"first_diagnostic={failure.primary_diagnostic}\n"
             "Use only paths and exact text visible below. Preserve source behavior and prefer an "
-            "observed portable path. Every non-create edit must include expected_text exactly as shown.\n"
+            "observed portable path. Every non-create edit must include expected_text exactly as shown. "
+            "Modify the existing causal declaration; do not add a guarded duplicate while leaving "
+            "the diagnosed declaration active. For Makefiles use $(CC) -dumpmachine, not uname or "
+            "undeclared case metadata, to identify the compilation target, and match its full "
+            "triple with an architecture prefix wildcard such as x86_64%.\n"
             f"{context}"
         )
-        plan_response = self.model_router.complete(
-            task=ModelTask.PATCH_PLANNING,
-            system_prompt=system_prompt(ModelTask.PATCH_PLANNING),
-            user_prompt=plan_prompt,
-            signals=EscalationSignals(
-                ood_without_evidence=case.target_architecture.canonical is Architecture.UNKNOWN
-            ),
-        )
-        self._trace(
-            ControllerStage.REPAIR.value,
-            "model_completed",
-            task=ModelTask.PATCH_PLANNING.value,
-            model=plan_response.model,
-            input_tokens=plan_response.input_tokens,
-            output_tokens=plan_response.output_tokens,
-            latency_seconds=plan_response.latency_seconds,
-            parsed=plan_response.parsed,
-        )
-        candidate = model_plan_candidate(
-            plan_response.data,
-            path_policy=self.path_policy,
-            current_frontier=failure.frontier.stage,
-        )
-        if candidate is None:
+        plan_response = None
+        candidate = None
+        for plan_attempt in range(1, 3):
+            plan_response = self.model_router.complete(
+                task=ModelTask.PATCH_PLANNING,
+                system_prompt=system_prompt(ModelTask.PATCH_PLANNING),
+                user_prompt=plan_prompt,
+                signals=EscalationSignals(
+                    ood_without_evidence=case.target_architecture.canonical is Architecture.UNKNOWN
+                ),
+            )
+            self._trace(
+                ControllerStage.REPAIR.value,
+                "model_completed",
+                task=ModelTask.PATCH_PLANNING.value,
+                model=plan_response.model,
+                input_tokens=plan_response.input_tokens,
+                output_tokens=plan_response.output_tokens,
+                latency_seconds=plan_response.latency_seconds,
+                parsed=plan_response.parsed,
+                plan_attempt=plan_attempt,
+            )
+            candidate = model_plan_candidate(
+                plan_response.data,
+                path_policy=self.path_policy,
+                current_frontier=failure.frontier.stage,
+            )
+            findings = (
+                self._model_causal_findings(failure, candidate)
+                if candidate is not None
+                else ["structured plan failed deterministic validation"]
+            )
+            if not findings:
+                break
             self._trace(
                 ControllerStage.REPAIR.value,
                 "model_patch_rejected",
-                reason="structured plan failed deterministic validation",
+                reason="; ".join(findings),
+                plan_attempt=plan_attempt,
             )
+            candidate = None
+            if plan_attempt == 1:
+                plan_prompt += (
+                    "\nThe previous plan was deterministically rejected: "
+                    + "; ".join(findings)
+                    + ". Return a different plan that directly removes or guards the existing "
+                    "causal declaration."
+                )
+        if candidate is None or plan_response is None:
             return None
         model_evidence = ledger.add_evidence(
             kind=EvidenceKind.LLM_INFERENCE,
@@ -564,9 +655,22 @@ class RepairController:
         candidate.score_components["critical_claim_confidence"] = candidate.confidence
         for edit in candidate.planned_edits:
             edit.claim_dependencies = list(candidate.assumption_claim_ids)
-        if self.model_router.records:
-            self.model_router.records[-1].caused_patch = True
         return candidate
+
+    def _mark_model_patch_applied(self, candidate_id: str) -> None:
+        """Attribute a model patch only after every critic accepts and the edit is applied."""
+        if self.model_router is None or not candidate_id.startswith("candidate-model-"):
+            return
+        record = next(
+            (
+                item
+                for item in reversed(self.model_router.records)
+                if item.task is ModelTask.PATCH_PLANNING
+            ),
+            None,
+        )
+        if record is not None:
+            record.caused_patch = True
 
     def _run_cheap_probe(
         self,
@@ -856,6 +960,7 @@ class RepairController:
             before_frontier = current_failure.frontier
             before_signature = current_failure.frontier.error_signature
             transaction = apply_candidate(selected, self.path_policy)
+            self._mark_model_patch_applied(selected.id)
             attempted_paths = sorted(edit.relative_path for edit in transaction.edits)
             self._trace(
                 ControllerStage.REPAIR.value,
