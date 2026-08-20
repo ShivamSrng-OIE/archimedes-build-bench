@@ -49,6 +49,44 @@ def _edit(path: str, expected: str, replacement: str, rationale: str) -> Planned
     )
 
 
+def _unconditional_build_abort(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
+    """Remove one unconditional build-script abort whose own message is in the failure log."""
+    pattern = re.compile(
+        r"(?m)^(?P<indent>[ \t]*)echo[ \t]+"
+        r"(?P<message>\"[^\"\r\n]{8,300}\"|'[^'\r\n]{8,300}')[ \t]+>&2[ \t]*\r?\n"
+        r"(?P=indent)exit[ \t]+[1-9][0-9]*[ \t]*\r?$"
+    )
+    matches: list[tuple[str, re.Match[str]]] = []
+    for path, text in files:
+        name = Path(path).name.lower()
+        if not (path.lower().endswith((".spec", ".sh", ".mk")) or name == "makefile"):
+            continue
+        for match in pattern.finditer(text):
+            message = match.group("message")[1:-1]
+            if message.casefold() in log.casefold():
+                matches.append((path, match))
+    if len(matches) != 1:
+        return None
+    path, match = matches[0]
+    indent = match.group("indent")
+    replacement = (
+        f"{indent}# Removed an unconditional build abort whose emitted diagnostic "
+        "matched the observed failure log."
+    )
+    rationale = (
+        "remove the uniquely observed unconditional build abort that emitted the causal diagnostic"
+    )
+    return DeterministicMatch(
+        RepairFamily.PACKAGING_RULE,
+        rationale,
+        (_edit(path, match.group(0), replacement, rationale),),
+        confidence=0.96,
+        risk=0.04,
+    )
+
+
 def _cmake_feature_check(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
     flag_match = re.search(r"-(?:mavx\d*|msse\d*(?:\.\d)?)", log, re.I)
     if flag_match is None or "does not support" not in log.lower():
@@ -384,6 +422,7 @@ def match_deterministic_repair(
     files = _text_files(repo)
     log = failure.normalized_log
     matchers = (
+        _unconditional_build_abort,
         _cmake_feature_check,
         _cmake_portable_source,
         _atomic_linkage,

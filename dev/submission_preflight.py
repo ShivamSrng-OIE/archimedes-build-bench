@@ -234,6 +234,7 @@ def audit(
     environment: dict[str, str],
     team_registered: bool,
     submission_access_confirmed: bool,
+    competition_model_access_confirmed: bool,
     model_smoke_sha256: str | None,
     hosted_smoke_sha256: str | None,
 ) -> dict[str, Any]:
@@ -263,6 +264,17 @@ def audit(
         fresh, message = False, f"archive validation failed: {error}"
     checks.append(Check("archive_matches_source", fresh, message))
     checks.extend(_model_checks(environment))
+    checks.append(
+        Check(
+            "competition_model_access",
+            competition_model_access_confirmed,
+            (
+                "organizer-compatible model delivery was manually confirmed"
+                if competition_model_access_confirmed
+                else "organizer-compatible model/network/credential delivery has not been confirmed"
+            ),
+        )
+    )
     checks.append(
         _digest_attestation(
             "real_model_smoke",
@@ -309,6 +321,7 @@ def audit(
             "real_model_identifiers",
             "model_base_url",
             "model_credential_injection",
+            "competition_model_access",
             "real_model_smoke",
             "docker",
             "agent_image",
@@ -345,6 +358,7 @@ def main() -> int:
     parser.add_argument("--archive", type=Path, default=ROOT / "dist" / "agent-submission.zip")
     parser.add_argument("--team-registered", action="store_true")
     parser.add_argument("--submission-access-confirmed", action="store_true")
+    parser.add_argument("--competition-model-access-confirmed", action="store_true")
     parser.add_argument("--model-smoke-sha256")
     parser.add_argument("--hosted-smoke-sha256")
     parser.add_argument("--json", action="store_true")
@@ -355,6 +369,7 @@ def main() -> int:
         environment=dict(os.environ),
         team_registered=args.team_registered,
         submission_access_confirmed=args.submission_access_confirmed,
+        competition_model_access_confirmed=args.competition_model_access_confirmed,
         model_smoke_sha256=args.model_smoke_sha256,
         hosted_smoke_sha256=args.hosted_smoke_sha256,
     )

@@ -53,8 +53,9 @@ nonzero until every local, model, registration, and hosted qualification gate is
 python dev/submission_preflight.py --json
 ```
 
-After registration, a real-model smoke run, and submission access are confirmed, add
-`--team-registered --submission-access-confirmed --model-smoke-sha256 <CURRENT_ZIP_SHA256>`. Add
+After registration, organizer-compatible model delivery, a real-model smoke run, and submission
+access are confirmed, add `--team-registered --submission-access-confirmed
+--competition-model-access-confirmed --model-smoke-sha256 <CURRENT_ZIP_SHA256>`. Add
 `--hosted-smoke-sha256 <PLATFORM_VERSION_SHA256>` only after that exact immutable ZIP passes the
 platform test. The supplied digests must match the current archive. The registration/access flags
 are manual attestations; they do not bypass or simulate any organizer check.
@@ -118,6 +119,10 @@ At the time this checklist was written:
   pending the organizer's protocol freeze;
 - no organizer-approved real foundation-model configuration had been injected into the managed
   runtime.
+
+The rc.2 local Runner uses `--network none` and does not forward `ARCHIMEDES_*` variables. A host
+Ollama smoke therefore validates the adapter but does not satisfy the separate
+`competition_model_access` gate.
 
 These are release/infrastructure blockers, not reasons to bypass `bb ready` or submit the current
 provisional archive as final.

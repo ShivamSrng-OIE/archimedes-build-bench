@@ -7,6 +7,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from dev.submission_preflight import (
+    Check,
     _archive_fresh,
     _digest_attestation,
     _latest_ready_result,
@@ -16,6 +17,21 @@ from runner.agent_submission import create_deterministic_zip
 
 
 class SubmissionPreflightTests(unittest.TestCase):
+    def test_manual_model_access_gate_is_distinct_from_model_configuration(self) -> None:
+        configured = _model_checks({
+            "ARCHIMEDES_MODEL_BACKEND": "local_openai_compatible",
+            "ARCHIMEDES_MODEL_BASE_URL": "http://127.0.0.1:11434/v1",
+            "ARCHIMEDES_FAST_MODEL": "fast-v1",
+            "ARCHIMEDES_STRONG_MODEL": "strong-v1",
+        })
+        access = Check(
+            "competition_model_access",
+            False,
+            "organizer-compatible model delivery has not been confirmed",
+        )
+        self.assertTrue(all(item.passed for item in configured))
+        self.assertFalse(access.passed)
+
     def test_mock_default_is_not_competition_model_configuration(self) -> None:
         checks = {item.name: item.passed for item in _model_checks({})}
         self.assertFalse(checks["real_model_backend"])

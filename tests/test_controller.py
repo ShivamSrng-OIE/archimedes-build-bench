@@ -8,7 +8,6 @@ from pathlib import Path
 from .support import make_workspace, runtime_config
 
 from src.build.unavailable import UnavailableBuildFeedbackProvider
-from src.repair.planner import PUBLIC_DEMO_BROKEN_BLOCK, PUBLIC_DEMO_REPAIRED_BLOCK
 from src.reasoning.controller import RepairController
 from src.config import FeatureFlags
 from src.schemas import RepairFamily
@@ -16,7 +15,7 @@ from src.workspace.paths import WorkspacePaths
 
 
 class ControllerTests(unittest.TestCase):
-    def test_official_task_contract_and_released_example_repair(self) -> None:
+    def test_official_task_contract_and_generic_abort_repair(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             task = json.dumps({
@@ -36,8 +35,13 @@ class ControllerTests(unittest.TestCase):
             package_input = repo / "input"
             package_input.mkdir()
             spec = package_input / "buildbench-hello.spec"
+            broken_block = (
+                '# BUILD-BENCH-DEMO-BROKEN\n'
+                'echo "intentional Build-Bench demo failure" >&2\n'
+                'exit 1\n'
+            )
             spec.write_text(
-                "Name: buildbench-hello\n%build\n" + PUBLIC_DEMO_BROKEN_BLOCK + "%install\n",
+                "Name: buildbench-hello\n%build\n" + broken_block + "%install\n",
                 encoding="utf-8",
             )
             outcome = RepairController(
@@ -46,8 +50,9 @@ class ControllerTests(unittest.TestCase):
             ).run()
             self.assertEqual(outcome.result.modified_paths, ["input/buildbench-hello.spec"])
             repaired = spec.read_text(encoding="utf-8")
-            self.assertNotIn(PUBLIC_DEMO_BROKEN_BLOCK, repaired)
-            self.assertIn(PUBLIC_DEMO_REPAIRED_BLOCK, repaired)
+            self.assertNotIn('echo "intentional Build-Bench demo failure" >&2', repaired)
+            self.assertNotIn("exit 1", repaired)
+            self.assertIn("unconditional build abort", repaired)
             self.assertTrue((output / "metrics.json").is_file())
             trace_path = output / "execution-trace.jsonl"
             trace_events = [
@@ -55,6 +60,39 @@ class ControllerTests(unittest.TestCase):
             ]
             self.assertEqual(trace_events[0]["stage"], "case_ingestion")
             self.assertEqual(trace_events[-1]["stage"], "finalize")
+
+    def test_unconditional_abort_rule_is_generic_and_requires_log_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            metadata = json.dumps({
+                "case_id": "arbitrary-package-failure",
+                "source_architecture": "aarch64",
+                "target_architecture": "riscv64",
+            })
+            repo, _ = make_workspace(
+                root,
+                metadata=metadata,
+                log="configure stopped because portable backend selection failed\n",
+            )
+            script = repo / "packaging" / "build.sh"
+            script.parent.mkdir()
+            original = (
+                '#!/bin/sh\n'
+                'echo "configure stopped because portable backend selection failed" >&2\n'
+                'exit 9\n'
+            )
+            script.write_text(original, encoding="utf-8")
+            other = repo / "packaging" / "unrelated.sh"
+            other.write_text('echo "a different failure" >&2\nexit 2\n', encoding="utf-8")
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+            self.assertEqual(outcome.result.modified_paths, ["packaging/build.sh"])
+            repaired = script.read_text(encoding="utf-8")
+            self.assertNotIn("exit 9", repaired)
+            self.assertIn("exit 2", other.read_text(encoding="utf-8"))
 
     def test_end_to_end_conditional_flag_repair(self) -> None:
         with tempfile.TemporaryDirectory() as name:

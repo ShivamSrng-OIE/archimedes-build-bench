@@ -35,11 +35,9 @@ from ..repair.critic import passes_portability_critic
 from ..repair.deterministic import match_deterministic_repair
 from ..repair.executor import EditTransaction, apply_candidate, rollback_transaction
 from ..repair.planner import (
-    PUBLIC_DEMO_BROKEN_BLOCK,
     conditional_flag_candidate,
     deterministic_match_candidate,
     model_plan_candidate,
-    public_demo_candidate,
 )
 from ..repair.policy_critic import passes_policy_critic
 from ..result_writer import write_diagnostic
@@ -263,60 +261,6 @@ class RepairController:
         confidence = min(item.confidence for item in claims) if self.config.features.claim_confidence else 0.80
         return conditional_flag_candidate(
             case, hazard, claim_ids=[item.id for item in claims], confidence=confidence
-        )
-
-    def _released_example_candidate(
-        self, *, failure: object, ledger: EvidenceLedger
-    ):
-        """Recognize the released hello Case by its explicit public marker and exact evidence."""
-        from ..schemas import FailureAnalysis
-
-        assert isinstance(failure, FailureAnalysis)
-        if "intentional build-bench demo failure" not in failure.normalized_log.lower():
-            return None
-        matches = search_regex(
-            self.workspace.repo,
-            r"BUILD-BENCH-DEMO-BROKEN",
-            reason="released Build-Bench demo marker",
-            max_results=2,
-        )
-        if len(matches) != 1:
-            return None
-        match = matches[0]
-        path = self.path_policy.validate_relative(match.path)
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            return None
-        if content.count(PUBLIC_DEMO_BROKEN_BLOCK) != 1:
-            return None
-        direct = ledger.add_evidence(
-            kind=EvidenceKind.DIRECT_FILE_OBSERVATION,
-            summary="released public demo failure block occurs exactly once",
-            reliability=RELIABILITY["direct_file"],
-            raw_excerpt=PUBLIC_DEMO_BROKEN_BLOCK,
-            source="bounded exact repository observation",
-            path=match.path,
-            line_start=match.line_start,
-            line_end=match.line_end,
-            stage=ControllerStage.REPAIR.value,
-        )
-        log_item = self._latest_failure_evidence(ledger)
-        if log_item is None:
-            return None
-        causal = ledger.add_claim(
-            "the released public demo block intentionally terminates the package build",
-            "public_example_cause",
-            supporting_evidence_ids=[direct.id, log_item.id],
-            consequence=ConsequenceLevel.HIGH,
-        )
-        confidence = causal.confidence if self.config.features.claim_confidence else 0.80
-        if self.config.features.claim_confidence and not claim_justifies_patch(
-            causal.confidence, causal.consequence_level, causal.status
-        ):
-            return None
-        return public_demo_candidate(
-            path=match.path, claim_ids=[causal.id], confidence=confidence
         )
 
     def _deterministic_rule_candidate(
@@ -737,15 +681,11 @@ class RepairController:
         excluded = excluded_families or set()
         candidate = None
         if self.config.features.repair_rules:
-            candidate = self._released_example_candidate(failure=failure, ledger=ledger)
+            candidate = self._deterministic_rule_candidate(
+                case=case, failure=failure, ledger=ledger
+            )
             if candidate is not None and candidate.repair_family in excluded:
                 candidate = None
-            if candidate is None:
-                candidate = self._deterministic_rule_candidate(
-                    case=case, failure=failure, ledger=ledger
-                )
-                if candidate is not None and candidate.repair_family in excluded:
-                    candidate = None
             if candidate is None:
                 candidate = self._flag_candidate(case, failure, hazards, anchors, ledger)
                 if candidate is not None and candidate.repair_family in excluded:

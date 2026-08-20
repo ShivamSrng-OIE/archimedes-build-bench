@@ -89,10 +89,10 @@ paths, VCS metadata, dummy artifacts, validation bypasses, sandbox escapes, or a
 execution. Text edits reject probable binaries and non-UTF-8 data, verify expected text/hash, write
 through same-directory atomic replacement, and record before/after hashes.
 
-The released `hello` Example Case has one explicit public marker adapter so the official local
-failure-to-success workflow remains testable without a paid model. It activates only when the public
-failure phrase is present in `initial-build.log`, the public marker occurs exactly once in the
-worktree, and the expected block matches byte-for-byte. It does not inspect or branch on hidden IDs.
+There is no Case-ID, package-name, or benchmark-marker repair branch. A generic packaging rule can
+remove one unconditional build-script `echo ... >&2` plus nonzero `exit` only when that exact emitted
+message appears in the causal failure log. The same evidence rule applies to any supported build
+script and refuses ambiguous matches.
 
 ## Model providers and local development
 
