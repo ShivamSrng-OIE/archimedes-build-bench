@@ -29,10 +29,12 @@ from ..models.prompts import system_prompt
 from ..models.router import ModelRouter
 from ..observability import TraceRecorder
 from ..repair.critic import passes_portability_critic
+from ..repair.deterministic import match_deterministic_repair
 from ..repair.executor import EditTransaction, apply_candidate, rollback_transaction
 from ..repair.planner import (
     PUBLIC_DEMO_BROKEN_BLOCK,
     conditional_flag_candidate,
+    deterministic_match_candidate,
     public_demo_candidate,
 )
 from ..repair.policy_critic import passes_policy_critic
@@ -40,6 +42,7 @@ from ..result_writer import write_diagnostic
 from ..schemas import (
     AgentResult, Architecture, ConsequenceLevel, EvidenceKind, JSONValue,
     Probe, RepairAttempt, RepairDecision,
+    RepairFamily,
 )
 from ..workspace.case_loader import load_case
 from ..workspace.path_policy import PathPolicy
@@ -246,6 +249,52 @@ class RepairController:
             path=match.path, claim_ids=[causal.id], confidence=confidence
         )
 
+    def _deterministic_rule_candidate(
+        self, *, case: object, failure: object, ledger: EvidenceLedger
+    ):
+        """Build a candidate only when a generic rule has unique file and log support."""
+        from ..schemas import CaseData, FailureAnalysis
+
+        assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
+        match = match_deterministic_repair(case, failure, self.workspace.repo)
+        if match is None:
+            return None
+        evidence_ids: list[str] = []
+        for edit in match.edits:
+            evidence = ledger.add_evidence(
+                kind=EvidenceKind.DIRECT_FILE_OBSERVATION,
+                summary=f"unique expected text supports {match.family.value}",
+                reliability=RELIABILITY["direct_file"],
+                raw_excerpt=edit.expected_text or "",
+                source="deterministic portability rule",
+                path=edit.path,
+                stage=ControllerStage.REPAIR.value,
+            )
+            evidence_ids.append(evidence.id)
+        log_evidence = next(
+            (item for item in ledger.evidence.values() if item.source == "initial build log"),
+            None,
+        )
+        if log_evidence is not None:
+            evidence_ids.append(log_evidence.id)
+        claim = ledger.add_claim(
+            match.rationale,
+            f"deterministic_{match.family.value}",
+            supporting_evidence_ids=evidence_ids,
+            consequence=ConsequenceLevel.HIGH,
+        )
+        if self.config.features.claim_confidence and not claim_justifies_patch(
+            claim.confidence, claim.consequence_level, claim.status
+        ):
+            return None
+        confidence = claim.confidence if self.config.features.claim_confidence else match.confidence
+        return deterministic_match_candidate(
+            match,
+            claim_ids=[claim.id],
+            confidence=confidence,
+            current_frontier=failure.frontier.stage,
+        )
+
     def _consult_model_if_configured(self, case: object, failure: object, ledger: EvidenceLedger) -> None:
         if self.model_router is None:
             return
@@ -438,6 +487,10 @@ class RepairController:
         if self.config.features.repair_rules:
             candidate = self._released_example_candidate(failure=failure, ledger=ledger)
             if candidate is None:
+                candidate = self._deterministic_rule_candidate(
+                    case=case, failure=failure, ledger=ledger
+                )
+            if candidate is None:
                 candidate = self._flag_candidate(case, failure, hazards, ledger)
         self._trace(
             ControllerStage.REPAIR.value,
@@ -544,6 +597,12 @@ class RepairController:
             metrics.input_tokens = self.model_router.budget.input_tokens
             metrics.output_tokens = self.model_router.budget.output_tokens
             metrics.estimated_cost = self.model_router.budget.estimated_cost
+        if (
+            candidate is None
+            and case.target_architecture.canonical is Architecture.UNKNOWN
+            and familiarity.requires_discovery
+        ):
+            metrics.selected_repair_family = RepairFamily.NO_SAFE_FIX.value
         metrics.finish()
         self._transition(
             ControllerStage.FINALIZE.value,

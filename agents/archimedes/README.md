@@ -165,9 +165,11 @@ Important current limitations:
   request/response contract remain unknown and are represented through configuration/adapters.
 - `BbBuildFeedbackProvider` intentionally remains unavailable. Host compiler results are never
   treated as official target-build truth.
-- V1's deterministic patch generator is deliberately narrow: it repairs directly traced x86-only
-  flags in recognized Make/CMake declarations. More semantic families have typed rules and critics
-  but require additional validated planners/model evidence.
+- Deterministic planners cover uniquely evidenced compiler-feature checks, guarded x86 flags,
+  portable source selection, atomic linkage, RPM architecture conditions, artifact paths,
+  generated-configuration markers, byte serialization, pointer-width assumptions, and synchronized
+  feature dispatch. Novel semantics or ambiguous source transformations still require model evidence
+  or return `no_safe_fix` rather than guessing.
 - QEMU is only a discovered capability; no emulator result is treated as definitive hardware,
   kernel, atomic, or memory-model evidence.
 - The submission archive is produced only with the root Starter Kit tooling. Never

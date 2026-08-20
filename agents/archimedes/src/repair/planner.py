@@ -8,6 +8,7 @@ from ..architecture.hazard_scanner import ArchitectureHazard
 from ..schemas import (
     Architecture, CaseData, FrontierStage, PatchCandidate, PlannedEdit, RepairFamily,
 )
+from .deterministic import DeterministicMatch
 
 PUBLIC_DEMO_BROKEN_BLOCK = """# BUILD-BENCH-DEMO-BROKEN
 echo "intentional Build-Bench demo failure" >&2
@@ -121,5 +122,40 @@ def public_demo_candidate(
             "source_preservation": 0.99,
             "rule_support": 0.99,
             "minimality": 0.99,
+        },
+    )
+
+
+def deterministic_match_candidate(
+    match: DeterministicMatch,
+    *,
+    claim_ids: list[str],
+    confidence: float,
+    current_frontier: FrontierStage,
+) -> PatchCandidate:
+    """Convert a uniquely observed repair-rule match into a critic-ready candidate."""
+    for edit in match.edits:
+        edit.claim_dependencies = list(claim_ids)
+    expected_frontier = FrontierStage(
+        min(int(FrontierStage.SUCCESS), max(int(FrontierStage.ENVIRONMENT), int(current_frontier) + 1))
+    )
+    return PatchCandidate(
+        id="candidate-001",
+        repair_family=match.family,
+        rationale=match.rationale,
+        assumption_claim_ids=claim_ids,
+        planned_edits=list(match.edits),
+        confidence=min(confidence, match.confidence),
+        risk=match.risk,
+        expected_frontier=expected_frontier,
+        expected_information_gain_if_built=0.80,
+        score_components={
+            "critical_claim_confidence": min(confidence, match.confidence),
+            "causal_coverage": 0.92,
+            "semantic_preservation": 0.88,
+            "expected_frontier_gain": 0.82,
+            "source_preservation": 0.86,
+            "rule_support": 0.94,
+            "minimality": 0.88,
         },
     )
