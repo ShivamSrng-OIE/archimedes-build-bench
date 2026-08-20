@@ -118,6 +118,12 @@ or hosted-provider assumption. If a configured real provider is unusable, determ
 runs first and the runtime returns a clear structured model error; it does not pretend heuristics are
 a foundation model.
 
+When deterministic rules cannot justify a repair, a configured model may perform bounded failure
+analysis followed by structured patch planning. Only validated causal/model-selected files enter the
+prompt. Plans are limited to five structured edits, must include exact expected text for existing
+files, receive current-content hashes, and pass claim-confidence, portability, path/policy, and atomic
+execution gates. Raw prompts and model responses are not written to the local execution trace.
+
 Optional development-only cost control uses `ARCHIMEDES_INPUT_COST_PER_MILLION`,
 `ARCHIMEDES_OUTPUT_COST_PER_MILLION`, and `ARCHIMEDES_MAX_ESTIMATED_COST_USD`. Pricing is never
 hard-coded. If rates are absent, estimated cost is unknown. STRONG escalation is bounded (default

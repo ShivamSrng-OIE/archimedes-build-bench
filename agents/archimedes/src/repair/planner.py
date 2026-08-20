@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import PurePosixPath
 
 from ..architecture.hazard_scanner import ArchitectureHazard
+from ..errors import PathPolicyError
 from ..schemas import (
-    Architecture, CaseData, FrontierStage, PatchCandidate, PlannedEdit, RepairFamily,
+    Architecture, CaseData, FrontierStage, JSONValue, PatchCandidate, PlannedEdit, RepairFamily,
 )
+from ..workspace.path_policy import PathPolicy
 from .deterministic import DeterministicMatch
 
 PUBLIC_DEMO_BROKEN_BLOCK = """# BUILD-BENCH-DEMO-BROKEN
@@ -157,5 +160,105 @@ def deterministic_match_candidate(
             "source_preservation": 0.86,
             "rule_support": 0.94,
             "minimality": 0.88,
+        },
+    )
+
+
+def model_plan_candidate(
+    data: dict[str, JSONValue],
+    *,
+    path_policy: PathPolicy,
+    current_frontier: FrontierStage,
+) -> PatchCandidate | None:
+    """Validate structured model edits against current bytes before critic review."""
+    family_value = data.get("repair_family")
+    rationale_value = data.get("rationale")
+    assumptions = data.get("assumptions")
+    raw_edits = data.get("edits")
+    try:
+        family = RepairFamily(str(family_value))
+    except ValueError:
+        return None
+    if family in {RepairFamily.UNKNOWN, RepairFamily.NO_SAFE_FIX}:
+        return None
+    if not isinstance(rationale_value, str) or not rationale_value.strip():
+        return None
+    if not isinstance(assumptions, list) or not assumptions or not all(
+        isinstance(item, str) and item.strip() for item in assumptions
+    ):
+        return None
+    if not isinstance(raw_edits, list) or not 1 <= len(raw_edits) <= 5:
+        return None
+    edits: list[PlannedEdit] = []
+    total_replacement = 0
+    for raw in raw_edits:
+        if not isinstance(raw, dict):
+            return None
+        operation = raw.get("operation")
+        proposed_path = raw.get("path")
+        replacement = raw.get("replacement")
+        expected = raw.get("expected_text")
+        edit_rationale = raw.get("rationale", rationale_value)
+        if operation not in {"replace_lines", "insert_before", "insert_after", "create_file"}:
+            return None
+        if not isinstance(proposed_path, str) or not isinstance(replacement, str):
+            return None
+        if not isinstance(edit_rationale, str) or not edit_rationale.strip():
+            return None
+        total_replacement += len(replacement)
+        if total_replacement > 64_000 or len(replacement) > 48_000:
+            return None
+        creating = operation == "create_file"
+        try:
+            path = path_policy.validate_relative(proposed_path, creating=creating)
+        except PathPolicyError:
+            return None
+        expected_hash: str | None = None
+        if creating:
+            if path.exists():
+                return None
+            expected = None
+        else:
+            if not isinstance(expected, str) or not expected or len(expected) > 48_000:
+                return None
+            try:
+                data_bytes = path.read_bytes()
+                current = data_bytes.decode("utf-8")
+            except (OSError, UnicodeError):
+                return None
+            if b"\0" in data_bytes[:8192] or current.count(expected) != 1:
+                return None
+            expected_hash = hashlib.sha256(data_bytes).hexdigest()
+        edits.append(
+            PlannedEdit(
+                operation=str(operation),
+                path=proposed_path,
+                replacement=replacement,
+                expected_text=expected if isinstance(expected, str) else None,
+                expected_hash=expected_hash,
+                rationale=edit_rationale[:2000],
+            )
+        )
+    expected_frontier = FrontierStage(
+        min(int(FrontierStage.SUCCESS), max(int(FrontierStage.ENVIRONMENT), int(current_frontier) + 1))
+    )
+    return PatchCandidate(
+        id="candidate-model-001",
+        repair_family=family,
+        rationale=rationale_value[:4000],
+        assumption_claim_ids=[],
+        planned_edits=edits,
+        confidence=0.80,
+        risk=0.18,
+        expected_frontier=expected_frontier,
+        expected_information_gain_if_built=0.72,
+        score_components={
+            "critical_claim_confidence": 0.80,
+            "causal_coverage": 0.78,
+            "semantic_preservation": 0.70,
+            "expected_frontier_gain": 0.70,
+            "source_preservation": 0.72,
+            "rule_support": 0.45,
+            "minimality": 0.75,
         },
     )

@@ -14,10 +14,12 @@ from ..architecture.hazard_scanner import ArchitectureHazard, scan_architecture_
 from ..architecture.profile import construct_profile
 from ..build.feedback import BuildBudget, BuildFeedbackProvider
 from ..config import ContextMode, RuntimeConfig
-from ..constants import PROTOCOL_VERSION, RELIABILITY
-from ..context.repository_search import inventory_repository, search_regex
+from ..constants import MAX_TEXT_FILE_BYTES, PROTOCOL_VERSION, RELIABILITY
+from ..context.repository_search import SearchSnippet, inventory_repository, search_regex
+from ..context.snippet_selector import select_snippets
 from ..evidence.confidence import claim_justifies_patch
 from ..evidence.ledger import EvidenceLedger
+from ..errors import PathPolicyError
 from ..forensics.frontier import FrontierMovement, compare_frontiers
 from ..forensics.log_parser import analyze_build_log
 from ..graph.builder import build_delta_graph
@@ -26,7 +28,7 @@ from ..memory.episode import EpisodeMemory
 from ..metrics import CaseMetrics
 from ..models.base import ModelTask
 from ..models.prompts import system_prompt
-from ..models.router import ModelRouter
+from ..models.router import EscalationSignals, ModelRouter
 from ..observability import TraceRecorder
 from ..repair.critic import passes_portability_critic
 from ..repair.deterministic import match_deterministic_repair
@@ -35,6 +37,7 @@ from ..repair.planner import (
     PUBLIC_DEMO_BROKEN_BLOCK,
     conditional_flag_candidate,
     deterministic_match_candidate,
+    model_plan_candidate,
     public_demo_candidate,
 )
 from ..repair.policy_critic import passes_policy_critic
@@ -295,9 +298,45 @@ class RepairController:
             current_frontier=failure.frontier.stage,
         )
 
-    def _consult_model_if_configured(self, case: object, failure: object, ledger: EvidenceLedger) -> None:
+    def _model_file_context(
+        self, failure: object, recommended_files: object
+    ) -> str:
+        """Read only a small validated set of model-recommended or causal files."""
+        from ..schemas import FailureAnalysis
+
+        assert isinstance(failure, FailureAnalysis)
+        requested: list[str] = []
+        if failure.frontier.primary_file:
+            requested.append(failure.frontier.primary_file)
+        if isinstance(recommended_files, list):
+            requested.extend(value for value in recommended_files if isinstance(value, str))
+        requested.extend(inventory_repository(self.workspace.repo).build_files[:4])
+        snippets: list[SearchSnippet] = []
+        for relative in dict.fromkeys(requested):
+            if len(snippets) >= 8 or any(part.startswith(".") for part in relative.replace("\\", "/").split("/")):
+                continue
+            try:
+                path = self.path_policy.validate_relative(relative)
+                data = path.read_bytes()
+            except (OSError, UnicodeError, PathPolicyError):
+                continue
+            if len(data) > MAX_TEXT_FILE_BYTES or b"\0" in data[:8192]:
+                continue
+            try:
+                text = data.decode("utf-8")
+            except UnicodeError:
+                continue
+            snippets.append(SearchSnippet(
+                relative, 1, min(160, text.count("\n") + 1),
+                "\n".join(text.splitlines()[:160]), "validated causal/model-selected file", 1.0,
+            ))
+        return select_snippets(snippets, max_characters=24_000)
+
+    def _consult_model_if_configured(
+        self, case: object, failure: object, ledger: EvidenceLedger
+    ):
         if self.model_router is None:
-            return
+            return None
         from ..schemas import CaseData, FailureAnalysis
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
@@ -331,7 +370,7 @@ class RepairController:
             kind=EvidenceKind.LLM_INFERENCE,
             summary="bounded model failure analysis",
             reliability=RELIABILITY["llm"],
-            raw_excerpt=response.raw_text,
+            raw_excerpt="",
             source=response.model,
             stage=ControllerStage.HYPOTHESES.value,
         )
@@ -346,6 +385,122 @@ class RepairController:
                         supporting_evidence_ids=[evidence.id],
                         consequence=ConsequenceLevel.MEDIUM,
                     )
+        context = self._model_file_context(failure, response.data.get("recommended_files"))
+        if not context:
+            self._trace(
+                ControllerStage.REPAIR.value,
+                "model_patch_skipped",
+                reason="no validated file context",
+            )
+            return None
+        plan_prompt = (
+            f"source_architecture={case.source_architecture.raw}\n"
+            f"target_architecture={case.target_architecture.raw}\n"
+            f"first_diagnostic={failure.primary_diagnostic}\n"
+            "Use only paths and exact text visible below. Preserve source behavior and prefer an "
+            "observed portable path. Every non-create edit must include expected_text exactly as shown.\n"
+            f"{context}"
+        )
+        plan_response = self.model_router.complete(
+            task=ModelTask.PATCH_PLANNING,
+            system_prompt=system_prompt(ModelTask.PATCH_PLANNING),
+            user_prompt=plan_prompt,
+            signals=EscalationSignals(
+                ood_without_evidence=case.target_architecture.canonical is Architecture.UNKNOWN
+            ),
+        )
+        self._trace(
+            ControllerStage.REPAIR.value,
+            "model_completed",
+            task=ModelTask.PATCH_PLANNING.value,
+            model=plan_response.model,
+            input_tokens=plan_response.input_tokens,
+            output_tokens=plan_response.output_tokens,
+            latency_seconds=plan_response.latency_seconds,
+            parsed=plan_response.parsed,
+        )
+        candidate = model_plan_candidate(
+            plan_response.data,
+            path_policy=self.path_policy,
+            current_frontier=failure.frontier.stage,
+        )
+        if candidate is None:
+            self._trace(
+                ControllerStage.REPAIR.value,
+                "model_patch_rejected",
+                reason="structured plan failed deterministic validation",
+            )
+            return None
+        model_evidence = ledger.add_evidence(
+            kind=EvidenceKind.LLM_INFERENCE,
+            summary="model proposed one bounded structured repair plan",
+            reliability=RELIABILITY["llm"],
+            source=plan_response.model,
+            stage=ControllerStage.REPAIR.value,
+        )
+        direct_ids: list[str] = []
+        for edit in candidate.planned_edits:
+            direct = ledger.add_evidence(
+                kind=(
+                    EvidenceKind.REPOSITORY_STRUCTURE
+                    if edit.operation == "create_file"
+                    else EvidenceKind.DIRECT_FILE_OBSERVATION
+                ),
+                summary=f"model edit precondition validated uniquely for {edit.path}",
+                reliability=(
+                    RELIABILITY["repository_structure"]
+                    if edit.operation == "create_file"
+                    else RELIABILITY["direct_file"]
+                ),
+                raw_excerpt=edit.expected_text or "",
+                source="guarded model-plan validation",
+                path=edit.path,
+                stage=ControllerStage.REPAIR.value,
+            )
+            direct_ids.append(direct.id)
+        log_evidence = next(
+            (item for item in ledger.evidence.values() if item.source == "initial build log"), None
+        )
+        causal_support = direct_ids + [model_evidence.id]
+        if log_evidence is not None:
+            causal_support.append(log_evidence.id)
+        causal = ledger.add_claim(
+            candidate.rationale,
+            "model_planned_causal_repair",
+            supporting_evidence_ids=causal_support,
+            consequence=ConsequenceLevel.HIGH,
+        )
+        assumption_ids: list[str] = []
+        assumptions = plan_response.data.get("assumptions")
+        assert isinstance(assumptions, list)
+        for value in assumptions:
+            assert isinstance(value, str)
+            assumption = ledger.add_claim(
+                value,
+                "model_patch_assumption",
+                supporting_evidence_ids=[model_evidence.id],
+                consequence=ConsequenceLevel.MEDIUM,
+            )
+            assumption_ids.append(assumption.id)
+        dependent_claims = [causal, *(ledger.claims[item_id] for item_id in assumption_ids)]
+        if not all(
+            claim_justifies_patch(item.confidence, item.consequence_level, item.status)
+            for item in dependent_claims
+        ):
+            self._trace(
+                ControllerStage.REPAIR.value,
+                "model_patch_rejected",
+                reason="one or more assumptions failed consequence-aware confidence gating",
+            )
+            return None
+        candidate.assumption_claim_ids = [causal.id, *assumption_ids]
+        candidate.confidence = min(0.85, causal.confidence)
+        candidate.score_components["critical_claim_confidence"] = candidate.confidence
+        for edit in candidate.planned_edits:
+            edit.claim_dependencies = list(candidate.assumption_claim_ids)
+        if self.model_router.records:
+            self.model_router.records[-1].caused_patch = True
+        return candidate
 
     def _run_cheap_probe(
         self,
@@ -492,6 +647,8 @@ class RepairController:
                 )
             if candidate is None:
                 candidate = self._flag_candidate(case, failure, hazards, ledger)
+        if candidate is None and self.model_router is not None:
+            candidate = self._consult_model_if_configured(case, failure, ledger)
         self._trace(
             ControllerStage.REPAIR.value,
             "candidate_generation_completed",
@@ -588,8 +745,7 @@ class RepairController:
                 metrics.policy_rejection_count += int(bool(selected.policy_findings))
                 metrics.invalid_patch_count += 1
         elif self.model_router is not None:
-            self._consult_model_if_configured(case, failure, ledger)
-            message = "Analysis completed with model evidence; no deterministically validated edit was applied."
+            message = "Analysis completed with model evidence; no validated edit was applied."
 
         if self.model_router is not None:
             metrics.model_calls = self.model_router.budget.calls

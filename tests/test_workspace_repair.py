@@ -52,6 +52,8 @@ class WorkspaceRepairTests(unittest.TestCase):
             for unsafe in ("../input/case.json", "/workspace/input/case.json", ".git/config", "hidden-evaluator/data"):
                 with self.subTest(path=unsafe), self.assertRaises(PathPolicyError):
                     policy.validate_relative(unsafe)
+            with self.assertRaises(PathPolicyError):
+                policy.validate_relative(".env.local", creating=True)
 
     def test_atomic_edit_hash_guard_and_rollback(self) -> None:
         with tempfile.TemporaryDirectory() as name:

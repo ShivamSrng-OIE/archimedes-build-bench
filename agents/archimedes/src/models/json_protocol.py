@@ -47,9 +47,25 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
         raise ModelProtocolError(f"model response missing required keys: {sorted(missing)}")
     if task is ModelTask.PATCH_PLANNING:
         edits = value.get("edits")
-        if not isinstance(edits, list):
-            raise ModelProtocolError("patch edits must be a JSON array")
+        assumptions = value.get("assumptions")
+        if not isinstance(assumptions, list) or not assumptions or not all(
+            isinstance(item, str) and item.strip() for item in assumptions
+        ):
+            raise ModelProtocolError("patch assumptions must be a non-empty string array")
+        if not isinstance(edits, list) or not 1 <= len(edits) <= 5:
+            raise ModelProtocolError("patch edits must contain between one and five operations")
         for edit in edits:
             if not isinstance(edit, dict) or edit.get("operation") not in _ALLOWED_EDIT_OPERATIONS:
                 raise ModelProtocolError("patch contains an unknown or dangerous operation")
+            if not all(
+                isinstance(edit.get(key), str) and edit.get(key)
+                for key in ("path", "replacement", "rationale")
+            ):
+                raise ModelProtocolError(
+                    "patch edit path, replacement, and rationale must be strings"
+                )
+            if edit.get("operation") != "create_file" and not isinstance(
+                edit.get("expected_text"), str
+            ):
+                raise ModelProtocolError("non-create patch edits require exact expected_text")
     return value

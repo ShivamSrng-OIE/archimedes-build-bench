@@ -38,6 +38,8 @@ class PathPolicy:
             raise PathPolicyError(f"path traversal rejected: {proposed!r}")
         if any(part.lower() in _FORBIDDEN_PARTS for part in pure.parts):
             raise PathPolicyError(f"protected path rejected: {proposed!r}")
+        if any(part.lower() == ".env" or part.lower().startswith(".env.") for part in pure.parts):
+            raise PathPolicyError(f"secret-bearing environment path rejected: {proposed!r}")
         if any("evaluator" in part.lower() or "hidden" in part.lower() for part in pure.parts):
             raise PathPolicyError(f"evaluator-like path rejected: {proposed!r}")
 

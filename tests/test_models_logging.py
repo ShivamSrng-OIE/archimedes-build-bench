@@ -36,6 +36,15 @@ class ModelsLoggingTests(unittest.TestCase):
         with self.assertRaises(ModelProtocolError):
             parse_model_json(raw, ModelTask.PATCH_PLANNING)
 
+    def test_json_protocol_requires_complete_bounded_patch_edits(self) -> None:
+        raw = (
+            '{"repair_family":"source_port","rationale":"x","assumptions":["a"],'
+            '"edits":[{"operation":"replace_lines","path":"a.c","replacement":"x",'
+            '"rationale":"x"}]}'
+        )
+        with self.assertRaises(ModelProtocolError):
+            parse_model_json(raw, ModelTask.PATCH_PLANNING)
+
     def test_mock_model_is_deterministic_and_records_routing(self) -> None:
         client = MockModelClient({ModelTask.FAILURE_ANALYSIS: FAILURE_RESPONSE})
         response = client.complete_json(
