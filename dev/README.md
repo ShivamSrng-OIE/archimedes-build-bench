@@ -20,6 +20,12 @@ python dev/evaluate.py --configuration K --case unconditional_x86_sse_flag --tra
 python dev/trace_viewer.py dev/traces/unconditional-x86-sse-flag-K.jsonl --output dev/trace.html
 ```
 
+Configurations B and D require a running local OpenAI-compatible endpoint. Configurations C and E
+require an explicitly configured remote endpoint/model and force the STRONG tier; run them only as
+cost-controlled pilots. A and K remain usable without a provider, and K accepts caller-selected
+provider settings. Use `ARCHIMEDES_CONTEXT_MODE=raw_context` with K for the capped raw-vs-selected
+context experiment.
+
 Every agent run writes a bounded `output/execution-trace.jsonl` by default. The trace records the
 controller stages, evidence counts, hypothesis/probe decisions, candidate review, build requests,
 model usage metadata, and final outcome. It deliberately excludes raw source, raw logs, prompts,

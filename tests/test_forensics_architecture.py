@@ -8,7 +8,8 @@ from src.architecture.aliases import normalize_architecture
 from src.architecture.familiarity import assess_familiarity
 from src.architecture.hazard_scanner import scan_architecture_hazards
 from src.architecture.profile import construct_profile
-from src.architecture.semantic_anchor import validate_anchor
+from src.architecture.hazard_scanner import ArchitectureHazard
+from src.architecture.semantic_anchor import extract_anchor, validate_anchor
 from src.forensics.error_signature import normalize_error_signature
 from src.forensics.frontier import FrontierMovement, compare_frontiers
 from src.forensics.log_parser import analyze_build_log, normalize_log
@@ -74,6 +75,17 @@ class ForensicsArchitectureTests(unittest.TestCase):
         findings = validate_anchor(anchor)
         self.assertIn("functional purpose is unknown", findings)
         self.assertIn("semantic invariants are absent", findings)
+
+    def test_extracts_evidence_bounded_compiler_flag_anchor(self) -> None:
+        hazard = ArchitectureHazard(
+            "Makefile", 2, "compiler_flag", "-msse4.2", "CFLAGS += -msse4.2", 0.88
+        )
+        anchor = extract_anchor(hazard, evidence_ids=["evidence-002"])
+        self.assertIsNotNone(anchor)
+        assert anchor is not None
+        self.assertEqual(anchor.site, "Makefile:2")
+        self.assertEqual(anchor.evidence_ids, ["evidence-002"])
+        self.assertEqual(validate_anchor(anchor), [])
 
 
 if __name__ == "__main__":

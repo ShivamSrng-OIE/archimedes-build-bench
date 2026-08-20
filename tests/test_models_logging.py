@@ -69,6 +69,21 @@ class ModelsLoggingTests(unittest.TestCase):
         )
         self.assertEqual([call.tier for call in client.calls], [ModelTier.FAST, ModelTier.STRONG])
 
+    def test_router_can_force_strong_tier_for_controlled_comparison(self) -> None:
+        client = MockModelClient({ModelTask.FAILURE_ANALYSIS: FAILURE_RESPONSE})
+        router = ModelRouter(
+            client,
+            UsageBudget(5, 3, 10_000),
+            1.0,
+            forced_tier=ModelTier.STRONG,
+        )
+        router.complete(
+            task=ModelTask.FAILURE_ANALYSIS,
+            system_prompt="system",
+            user_prompt="case",
+        )
+        self.assertEqual(router.records[-1].tier, ModelTier.STRONG)
+
     def test_cost_budget_is_optional_and_bounded_when_configured(self) -> None:
         budget = UsageBudget(5, 3, 10_000, max_cost_usd=0.000001, input_rate_per_million=10, output_rate_per_million=10)
         with self.assertRaises(BudgetExhaustedError):

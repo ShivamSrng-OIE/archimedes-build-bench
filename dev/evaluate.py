@@ -102,11 +102,23 @@ def run_case(
             persisted_trace = str(destination)
         modified = result.get("modified_paths", [])
         expected_file = metadata["expected_causal_file"]
+        tier_mode = environment.get("ARCHIMEDES_MODEL_TIER", "auto")
+        if tier_mode == "strong":
+            model_label = environment.get("ARCHIMEDES_STRONG_MODEL", "mock-strong")
+        elif tier_mode == "fast":
+            model_label = environment.get("ARCHIMEDES_FAST_MODEL", "mock-fast")
+        else:
+            model_label = (
+                f"fast={environment.get('ARCHIMEDES_FAST_MODEL', 'mock-fast')};"
+                f"strong={environment.get('ARCHIMEDES_STRONG_MODEL', 'mock-strong')}"
+            )
         return {
             **metrics,
             "case_id": metadata["case_id"],
             "configuration": configuration,
-            "model": environment.get("ARCHIMEDES_FAST_MODEL", "mock-fast"),
+            "model": model_label,
+            "model_backend": environment.get("ARCHIMEDES_MODEL_BACKEND", "mock"),
+            "model_tier": tier_mode,
             "source_arch": metadata["source_architecture"],
             "target_arch": metadata["target_architecture"],
             "failure_family": metadata["failure_family"],

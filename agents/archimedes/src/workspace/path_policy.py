@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ..errors import PathPolicyError
+from ..schemas import JSONValue
 
 _FORBIDDEN_PARTS = {
     ".git",
@@ -22,6 +23,47 @@ _FORBIDDEN_PARTS = {
 @dataclass(frozen=True, slots=True)
 class PathPolicy:
     repo_root: Path
+    allowed_patterns: tuple[str, ...] | None = None
+
+    @classmethod
+    def from_metadata(
+        cls, repo_root: Path, metadata: dict[str, JSONValue]
+    ) -> "PathPolicy":
+        """Honor an optional published allowed_paths list without inventing it when absent."""
+        value: JSONValue | None = metadata.get("allowed_paths")
+        policy = metadata.get("policy")
+        if value is None and isinstance(policy, dict):
+            value = policy.get("allowed_paths")
+        if value is None:
+            return cls(repo_root)
+        if not isinstance(value, list) or not value or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            raise PathPolicyError("declared allowed_paths must be a non-empty string array")
+        patterns: list[str] = []
+        for item in value:
+            assert isinstance(item, str)
+            normalized = item.strip().replace("\\", "/")
+            pure = PurePosixPath(normalized)
+            if pure.is_absolute() or any(part in {"", ".."} for part in pure.parts):
+                raise PathPolicyError(f"invalid declared allowed path: {item!r}")
+            patterns.append(normalized)
+        return cls(repo_root, tuple(patterns))
+
+    def _is_declared_allowed(self, path: PurePosixPath) -> bool:
+        if self.allowed_patterns is None:
+            return True
+        relative = path.as_posix()
+        for pattern in self.allowed_patterns:
+            if pattern in {".", "*", "**", "**/*"}:
+                return True
+            prefix = pattern.rstrip("/")
+            if not any(character in pattern for character in "*?["):
+                if relative == prefix or relative.startswith(prefix + "/"):
+                    return True
+            elif path.match(pattern):
+                return True
+        return False
 
     def validate_relative(self, proposed: str, *, creating: bool = False) -> Path:
         """Resolve a model-proposed relative path beneath work/repo.
@@ -42,6 +84,8 @@ class PathPolicy:
             raise PathPolicyError(f"secret-bearing environment path rejected: {proposed!r}")
         if any("evaluator" in part.lower() or "hidden" in part.lower() for part in pure.parts):
             raise PathPolicyError(f"evaluator-like path rejected: {proposed!r}")
+        if not self._is_declared_allowed(pure):
+            raise PathPolicyError(f"path is outside the Case allowed_paths: {proposed!r}")
 
         root = self.repo_root.resolve(strict=True)
         candidate = root.joinpath(*pure.parts)

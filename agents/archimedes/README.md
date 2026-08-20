@@ -107,16 +107,27 @@ ARCHIMEDES_MODEL_BASE_URL=http://127.0.0.1:11434/v1
 ARCHIMEDES_MODEL_API_KEY=...                 # remote only; never logged
 ARCHIMEDES_FAST_MODEL=...
 ARCHIMEDES_STRONG_MODEL=...
+ARCHIMEDES_MODEL_TIER=auto|fast|strong
 ARCHIMEDES_MODEL_TIMEOUT_SECONDS=30
 ARCHIMEDES_MAX_TOTAL_MODEL_CALLS=12
 ARCHIMEDES_MAX_STRONG_CALLS=3
 ARCHIMEDES_MAX_TOTAL_TOKENS=50000
 ```
 
+The competition rulebook requires a participating Agent to use an LLM as its foundation model.
+`mock` is therefore for deterministic development and orchestration tests only; it is not an
+acceptable final competition configuration. The final immutable version must use a real local or
+remote OpenAI-compatible model through the organizer-approved network and credential mechanism.
+That mechanism must be validated after the protocol freeze; credentials are never bundled.
+
 Local mode rejects non-loopback base URLs. The reasoning layer contains no Ollama, llama.cpp, vLLM,
 or hosted-provider assumption. If a configured real provider is unusable, deterministic analysis
 runs first and the runtime returns a clear structured model error; it does not pretend heuristics are
 a foundation model.
+
+`auto` is the production tier policy: start with FAST and escalate to STRONG only on explicit
+uncertainty signals. `fast` and `strong` force a tier for controlled development comparisons; they
+do not change the provider or the configured model identifiers.
 
 When deterministic rules cannot justify a repair, a configured model may perform bounded failure
 analysis followed by structured patch planning. Only validated causal/model-selected files enter the
@@ -163,6 +174,28 @@ requires no service or extra dependency, and can be disabled with
 `ARCHIMEDES_ENABLE_LOCAL_TRACE=false`. Filesystem ordering and per-case identifiers are
 deterministic; the experiment runner
 records commit, UTC timestamp, seed, model identifier, feature configuration, and case metadata hash.
+
+## Method disclosure
+
+- Foundation model: selected at deployment through `ARCHIMEDES_FAST_MODEL` and
+  `ARCHIMEDES_STRONG_MODEL`; the exact provider, model/version, and endpoint configuration must be
+  recorded with the final immutable submission. Mock fixtures are not a competition foundation
+  model.
+- Prompting and loop: task-specific structured contracts in `src/models/prompts.py`; evidence-first
+  failure analysis, bounded patch planning, portability/policy critique, guarded execution, and up
+  to the configured repair-attempt limit with frontier-based retention or rollback.
+- Retrieval and tools: bounded repository inventory, regex/source search, static architecture
+  hazard scanning, local portability rules, and officially exposed build feedback. External
+  knowledge is disabled by default.
+- Training and data: no training or fine-tuning is performed. The development-only synthetic corpus
+  is outside the submitted Agent and contains no hidden Case material. No private knowledge base or
+  pre-generated Case repair is bundled.
+- External services: only the configured OpenAI-compatible model endpoint may be contacted, subject
+  to the final competition network policy. The Agent does not access Docker, the Validator, or any
+  evaluator service directly.
+- Reproducibility: inference providers can be nondeterministic even with deterministic request
+  settings. Filesystem traversal, identifiers, budgets, candidate gates, and JSON outputs are
+  deterministic. The Agent has no cross-Case cache and declares no third-party Python dependency.
 
 Important current limitations:
 

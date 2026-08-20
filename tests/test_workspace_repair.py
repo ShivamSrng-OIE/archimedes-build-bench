@@ -55,6 +55,20 @@ class WorkspaceRepairTests(unittest.TestCase):
             with self.assertRaises(PathPolicyError):
                 policy.validate_relative(".env.local", creating=True)
 
+    def test_path_policy_honors_optional_case_allowed_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            (repo / "src").mkdir()
+            (repo / "docs").mkdir()
+            (repo / "src" / "main.c").write_text("int x;\n", encoding="utf-8")
+            (repo / "docs" / "notes.txt").write_text("notes\n", encoding="utf-8")
+            policy = PathPolicy.from_metadata(repo, {"allowed_paths": ["src/**"]})
+            self.assertEqual(policy.validate_relative("src/main.c"), repo / "src" / "main.c")
+            with self.assertRaises(PathPolicyError):
+                policy.validate_relative("docs/notes.txt")
+            with self.assertRaises(PathPolicyError):
+                PathPolicy.from_metadata(repo, {"allowed_paths": ["../outside"]})
+
     def test_atomic_edit_hash_guard_and_rollback(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)

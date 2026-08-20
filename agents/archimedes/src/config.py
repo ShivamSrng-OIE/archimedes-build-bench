@@ -22,6 +22,12 @@ class ContextMode(str, Enum):
     ARCHIMEDES_SELECTED_CONTEXT = "archimedes_selected_context"
 
 
+class ModelTierMode(str, Enum):
+    AUTO = "auto"
+    FAST = "fast"
+    STRONG = "strong"
+
+
 def _bool(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -74,6 +80,7 @@ class RuntimeConfig:
     model_api_key: str | None
     fast_model: str
     strong_model: str
+    model_tier_mode: ModelTierMode
     model_timeout_seconds: float
     max_total_model_calls: int
     max_strong_calls: int
@@ -106,6 +113,11 @@ class RuntimeConfig:
             context_mode = ContextMode(context_raw)
         except ValueError as exc:
             raise ConfigurationError(f"unsupported context mode: {context_raw}") from exc
+        tier_raw = os.getenv("ARCHIMEDES_MODEL_TIER", "auto").strip().lower()
+        try:
+            tier_mode = ModelTierMode(tier_raw)
+        except ValueError as exc:
+            raise ConfigurationError(f"unsupported model tier mode: {tier_raw}") from exc
 
         base_url = os.getenv("ARCHIMEDES_MODEL_BASE_URL", "http://127.0.0.1:11434/v1")
         if backend is ModelBackend.LOCAL_OPENAI_COMPATIBLE:
@@ -133,6 +145,7 @@ class RuntimeConfig:
             model_api_key=os.getenv("ARCHIMEDES_MODEL_API_KEY"),
             fast_model=os.getenv("ARCHIMEDES_FAST_MODEL", "mock-fast"),
             strong_model=os.getenv("ARCHIMEDES_STRONG_MODEL", "mock-strong"),
+            model_tier_mode=tier_mode,
             model_timeout_seconds=_float("ARCHIMEDES_MODEL_TIMEOUT_SECONDS", 30.0, 0.1),
             max_total_model_calls=_int("ARCHIMEDES_MAX_TOTAL_MODEL_CALLS", 12),
             max_strong_calls=_int("ARCHIMEDES_MAX_STRONG_CALLS", 3),

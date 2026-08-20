@@ -4,7 +4,13 @@ from pathlib import Path
 
 from . import AGENT
 
-from src.config import ContextMode, FeatureFlags, ModelBackend, RuntimeConfig
+from src.config import (
+    ContextMode,
+    FeatureFlags,
+    ModelBackend,
+    ModelTierMode,
+    RuntimeConfig,
+)
 
 __all__ = ["AGENT", "make_workspace", "runtime_config"]
 
@@ -17,6 +23,7 @@ def runtime_config(workspace: Path, *, features: FeatureFlags | None = None) -> 
         model_api_key=None,
         fast_model="mock-fast",
         strong_model="mock-strong",
+        model_tier_mode=ModelTierMode.AUTO,
         model_timeout_seconds=5.0,
         max_total_model_calls=10,
         max_strong_calls=3,

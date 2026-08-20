@@ -27,6 +27,7 @@ class CaseMetrics:
     output_tokens: int = 0
     estimated_cost: float | None = None
     probe_count: int = 0
+    semantic_anchor_count: int = 0
     invalid_patch_count: int = 0
     rollback_count: int = 0
     policy_rejection_count: int = 0

@@ -10,6 +10,7 @@ from .support import make_workspace, runtime_config
 from src.build.unavailable import UnavailableBuildFeedbackProvider
 from src.repair.planner import PUBLIC_DEMO_BROKEN_BLOCK, PUBLIC_DEMO_REPAIRED_BLOCK
 from src.reasoning.controller import RepairController
+from src.config import FeatureFlags
 from src.schemas import RepairFamily
 from src.workspace.paths import WorkspacePaths
 
@@ -79,8 +80,34 @@ class ControllerTests(unittest.TestCase):
             self.assertIn("ifneq", repaired)
             self.assertIn("CFLAGS += -msse4.2", repaired)
             self.assertEqual(outcome.metrics.selected_repair_family, RepairFamily.CONDITIONAL_COMPILER_FLAG.value)
+            self.assertEqual(outcome.metrics.semantic_anchor_count, 1)
+            episode = json.loads((output / "repair-episode.json").read_text(encoding="utf-8"))
+            self.assertEqual(episode["semantic_anchors"][0]["symbol"], "-msse4.2")
             for required in ("evidence-ledger.json", "architecture-constitution.json", "repair-episode.json", "metrics.json"):
                 self.assertTrue((output / required).is_file())
+
+    def test_semantic_anchor_ablation_changes_diagnostics_not_safe_rule(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            metadata = json.dumps({
+                "case_id": "sse-ablation",
+                "source_architecture": "x86_64",
+                "target_architecture": "aarch64",
+            })
+            repo, output = make_workspace(
+                root, metadata=metadata,
+                log="cc: error: unrecognized command-line option '-msse4.2'\n",
+            )
+            (repo / "Makefile").write_text("CFLAGS += -msse4.2\n", encoding="utf-8")
+            features = FeatureFlags(semantic_anchors=False)
+            outcome = RepairController(
+                config=runtime_config(root, features=features),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+            self.assertEqual(outcome.metrics.semantic_anchor_count, 0)
+            episode = json.loads((output / "repair-episode.json").read_text(encoding="utf-8"))
+            self.assertEqual(episode["semantic_anchors"], [])
 
     def test_ambiguous_atomic_failure_gathers_hypotheses_without_blind_patch(self) -> None:
         with tempfile.TemporaryDirectory() as name:

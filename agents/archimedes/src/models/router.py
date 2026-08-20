@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..config import ModelBackend, RuntimeConfig
+from ..config import ModelBackend, ModelTierMode, RuntimeConfig
 from ..context.token_budget import UsageBudget, approximate_tokens
 from .base import ModelCallRecord, ModelClient, ModelResponse, ModelTask, ModelTier
 from .openai_compatible import OpenAICompatibleModelClient
@@ -34,6 +34,7 @@ class ModelRouter:
     client: ModelClient
     budget: UsageBudget
     timeout_seconds: float
+    forced_tier: ModelTier | None = None
     records: list[ModelCallRecord] = field(default_factory=list)
 
     def complete(
@@ -44,7 +45,9 @@ class ModelRouter:
         user_prompt: str,
         signals: EscalationSignals | None = None,
     ) -> ModelResponse:
-        tier = ModelTier.STRONG if signals and signals.requires_strong() else ModelTier.FAST
+        tier = self.forced_tier or (
+            ModelTier.STRONG if signals and signals.requires_strong() else ModelTier.FAST
+        )
         estimated = approximate_tokens(system_prompt + user_prompt)
         self.budget.authorize(strong=tier is ModelTier.STRONG, estimated_input_tokens=estimated)
         response = self.client.complete_json(
@@ -84,4 +87,14 @@ def create_runtime_router(config: RuntimeConfig) -> ModelRouter | None:
         input_rate_per_million=config.input_cost_per_million,
         output_rate_per_million=config.output_cost_per_million,
     )
-    return ModelRouter(client=client, budget=budget, timeout_seconds=config.model_timeout_seconds)
+    forced_tier = {
+        ModelTierMode.AUTO: None,
+        ModelTierMode.FAST: ModelTier.FAST,
+        ModelTierMode.STRONG: ModelTier.STRONG,
+    }[config.model_tier_mode]
+    return ModelRouter(
+        client=client,
+        budget=budget,
+        timeout_seconds=config.model_timeout_seconds,
+        forced_tier=forced_tier,
+    )
