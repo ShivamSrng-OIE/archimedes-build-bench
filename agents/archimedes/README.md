@@ -1,0 +1,187 @@
+# Archimedes
+
+Archimedes is an evidence-first autonomous repair agent for cross-architecture package failures.
+Its research objective is to test whether claim-level uncertainty, source/target causal modeling,
+semantic abstraction, cheap discriminative probes, and failure-frontier feedback can improve
+portable software repair. No benchmark-performance claim is made by this implementation.
+
+## Competition execution model
+
+The agent expects `BB_WORKSPACE` to name a workspace with read-only-style `input/`, the only
+editable package tree at `work/repo/`, and writable `output/`. If the variable is absent, the
+provisional protocol default is `/workspace`. `python -m src.main` runs exactly one case and writes
+`output/agent-result.json`; the repair itself is the changed `work/repo` tree.
+
+The checked-in manifest and result writer use the specification's provisional schema/protocol
+`0.1`. No official Build-Bench Starter Kit was present when this version was implemented, so these
+must be compared with the installed kit before submission. The manifest intentionally contains no
+undocumented keys. The agent bundle uses only Python 3.11 standard-library modules.
+
+## System architecture
+
+The runtime is separated into small typed packages:
+
+- `workspace` resolves all paths, loads bounded case input, discovers tools without running them,
+  and rejects traversal, absolute paths, protected metadata, evaluator-like targets, and external
+  symlink destinations.
+- `forensics` normalizes noisy logs, chooses the earliest high-causality diagnostic, classifies
+  failure families, produces stable signatures, and places failures on an ordered frontier.
+- `architecture` owns alias normalization, hazard scanning, the Architecture Constitution,
+  familiarity and OOD scoring, evidence-first discovery, semantic anchors, and safe probe execution.
+- `evidence`, `graph`, and `reasoning` maintain the evidence ledger, claim confidence,
+  source/target Architecture Delta Graph, hypothesis portfolio, probe value, candidate ranking,
+  and the explicit repair controller state machine.
+- `models` provides deterministic mock and local/remote OpenAI-compatible clients behind one
+  structured interface, strict JSON contracts, bounded retry, and cost-aware FAST/STRONG routing.
+- `repair` loads generic portability rules, generates structured edits, runs portability and policy
+  critics, applies atomic content/hash-guarded changes, and supports rollback without Git.
+- `build` isolates the unreleased official build-feedback contract. The current provider is
+  unavailable and fail-closed; no request format has been invented.
+- `memory`, `context`, and `metrics` retain bounded per-case state, select small provenance-bearing
+  context, and measure action/resource value without assuming cross-case persistence.
+
+The thin `src/main.py` only loads configuration, resolves the workspace, constructs dependencies,
+runs `RepairController`, writes the result, and translates expected fatal errors into diagnostics.
+
+## Reasoning loop
+
+The controller ingests immutable case evidence, inventories the repository, extracts the first
+causal failure, scans architecture hazards, builds the target Constitution and familiarity score,
+and creates a source/target delta graph. It maintains multiple real hypotheses when evidence is
+ambiguous. Cheap bounded repository probes precede model or build spending. A repair is considered
+only after causal assumptions pass consequence-dependent confidence gates, portability review, and
+deterministic competition policy review.
+
+The source architecture is treated as a control condition: the central question is which assumption
+was valid in the source world but invalid in the target world. Architecture-specific syntax is not
+translated until the functional purpose and invariants are represented as a Semantic Anchor. An
+existing generic/scalar implementation is preferred to novel target-specific source.
+
+When official build feedback becomes available, each request must state expected information value.
+The new frontier is compared with the old one: deeper stages are retained, earlier stages are rolled
+back, unchanged signatures are ineffective, and a same-stage new causal error is partial progress.
+The edit transaction preserves the best reversible state independently of repository Git metadata.
+
+## Evidence and confidence semantics
+
+Confidence values are heuristic epistemic decision scores, not empirically calibrated probabilities.
+Evidence retains kind, source, excerpt, optional path/range, reliability, strength, and stage. Claims
+retain separate supporting and contradicting evidence. Fusion occurs in one module using independent
+support/contradiction products. Pure LLM support is capped at `0.65`; pure static-pattern support is
+capped at `0.75`; confirmation requires `>= 0.90`, non-LLM evidence, and no strong direct conflict.
+High-consequence claims need `0.80`; critical claims need `0.90`. A candidate is controlled by its
+weakest required high-consequence assumption rather than an average of easy facts.
+
+This design makes model self-confidence subordinate to observed evidence. Low-familiarity/OOD mode
+increases static discovery, portable-fallback search, toolchain evidence, and cross-checking while
+preventing unsupported architecture improvisation from becoming confirmed.
+
+## Repair rules and security
+
+`src/knowledge/portability_rules.json` contains generic semantic-shape rules for conditional
+architecture flags, scalar fallbacks, intrinsic guards, toolchain feature detection, atomic linkage
+when proven, and ABI width assumptions. It contains no package- or case-specific hidden fixes.
+
+Repository contents and logs are untrusted input. They are inspected statically and inserted into
+model prompts with an explicit prompt-injection warning. Model output cannot execute shell commands;
+only `replace_lines`, `insert_before`, `insert_after`, and `create_file` operations are accepted.
+File deletion is disabled. Edits cannot target input/output, tests via deletion, hidden/evaluator
+paths, VCS metadata, dummy artifacts, validation bypasses, sandbox escapes, or arbitrary command
+execution. Text edits reject probable binaries and non-UTF-8 data, verify expected text/hash, write
+through same-directory atomic replacement, and record before/after hashes.
+
+## Model providers and local development
+
+Development does not require paid inference. `MOCK`, `LOCAL_OPENAI_COMPATIBLE`, and
+`REMOTE_OPENAI_COMPATIBLE` are logical modes behind `ModelClient`. Unit tests inject deterministic
+`MockModelClient` fixtures keyed by task and verify task/tier/input-size telemetry. Runtime backend
+selection uses:
+
+```text
+ARCHIMEDES_MODEL_BACKEND=mock|local_openai_compatible|remote_openai_compatible
+ARCHIMEDES_MODEL_BASE_URL=http://127.0.0.1:11434/v1
+ARCHIMEDES_MODEL_API_KEY=...                 # remote only; never logged
+ARCHIMEDES_FAST_MODEL=...
+ARCHIMEDES_STRONG_MODEL=...
+ARCHIMEDES_MODEL_TIMEOUT_SECONDS=30
+ARCHIMEDES_MAX_TOTAL_MODEL_CALLS=12
+ARCHIMEDES_MAX_STRONG_CALLS=3
+ARCHIMEDES_MAX_TOTAL_TOKENS=50000
+```
+
+Local mode rejects non-loopback base URLs. The reasoning layer contains no Ollama, llama.cpp, vLLM,
+or hosted-provider assumption. If a configured real provider is unusable, deterministic analysis
+runs first and the runtime returns a clear structured model error; it does not pretend heuristics are
+a foundation model.
+
+Optional development-only cost control uses `ARCHIMEDES_INPUT_COST_PER_MILLION`,
+`ARCHIMEDES_OUTPUT_COST_PER_MILLION`, and `ARCHIMEDES_MAX_ESTIMATED_COST_USD`. Pricing is never
+hard-coded. If rates are absent, estimated cost is unknown. STRONG escalation is bounded (default
+three calls) and requires an explicit signal such as low critical confidence, high hypothesis
+entropy, sample disagreement, unknown semantics, novel multi-file reasoning, unexplained repair
+failure, or OOD mode without adequate deterministic evidence.
+
+## Feature switches and experiments
+
+The following environment switches default to true and support controlled ablation:
+
+```text
+ENABLE_DETERMINISTIC_FORENSICS
+ENABLE_CLAIM_CONFIDENCE
+ENABLE_ARCHITECTURE_DISCOVERY
+ENABLE_DELTA_GRAPH
+ENABLE_SEMANTIC_ANCHORS
+ENABLE_ACTIVE_PROBES
+ENABLE_REPAIR_RULES
+ENABLE_FAILURE_FRONTIER
+```
+
+`ARCHIMEDES_CONTEXT_MODE=raw_context|archimedes_selected_context` compares bounded raw log context
+with selected causal context. `dev/evaluate.py` (outside this competition bundle) runs a fixed,
+sorted synthetic case set under A–K configurations and emits JSONL or CSV. It records seed, commit,
+configuration, model, token/cost data, frontiers, causal-file agreement, and repair-family agreement.
+The harness never labels these surrogates as verified build success. Paid-model experiments should
+expand from 5–10 representative cases to 20–30 only after traces and cost are inspected.
+
+## Diagnostics, reproducibility, and limitations
+
+Bounded development diagnostics are written as `evidence-ledger.json`,
+`architecture-constitution.json`, `repair-episode.json`, and `metrics.json`. They contain no
+credentials. Filesystem ordering and per-case identifiers are deterministic; the experiment runner
+records commit, UTC timestamp, seed, model identifier, feature configuration, and case metadata hash.
+
+Important current limitations:
+
+- No official Starter Kit, examples, schemas, readiness CLI, or exact version were present locally.
+- The official network/API-key injection policy, runtime budgets, resource limits, and build-feedback
+  request/response contract remain unknown and are represented through configuration/adapters.
+- `BbBuildFeedbackProvider` intentionally remains unavailable. Host compiler results are never
+  treated as official target-build truth.
+- V1's deterministic patch generator is deliberately narrow: it repairs directly traced x86-only
+  flags in recognized Make/CMake declarations. More semantic families have typed rules and critics
+  but require additional validated planners/model evidence.
+- QEMU is only a discovered capability; no emulator result is treated as definitive hardware,
+  kernel, atomic, or memory-model evidence.
+- The provisional archive must be produced with official Starter Kit tooling once available. Never
+  include `.env`, credentials, caches, prior logs, model traces, or the development corpus.
+
+These choices preserve the research rationale: claim-level confidence prevents one dangerous weak
+assumption from hiding among easy facts; source architecture supplies the control condition;
+Semantic Anchors discourage instruction-name translation; builds are active experiments rather than
+blind retries; frontier tracking preserves partial progress; and unknown-architecture mode changes
+evidence-gathering behavior instead of increasing speculation.
+
+## Development checks
+
+From the repository root:
+
+```text
+python -m unittest discover -s tests -t . -v
+python -m compileall agents/archimedes/src
+ruff check agents/archimedes/src tests dev/evaluate.py
+mypy agents/archimedes/src
+python dev/evaluate.py --configuration A --case unconditional_x86_sse_flag
+```
+
+Official `bb doctor`, `bb test`, `bb check`, `bb ready`, packaging, ZIP hashing, and upload remain
+blocked until the official Starter Kit is actually installed. Archimedes never uploads automatically.

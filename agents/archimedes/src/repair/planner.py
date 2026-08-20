@@ -1,0 +1,79 @@
+"""Evidence-gated deterministic candidate generation for trusted V1 repair families."""
+
+from __future__ import annotations
+
+from pathlib import PurePosixPath
+
+from ..architecture.hazard_scanner import ArchitectureHazard
+from ..schemas import (
+    Architecture, CaseData, FrontierStage, PatchCandidate, PlannedEdit, RepairFamily,
+)
+
+
+def _makefile_condition(line: str, target: Architecture) -> str:
+    del target  # The guard describes flag support, not the currently observed target alone.
+    return (
+        "ARCHIMEDES_TARGET_TRIPLE ?= $(shell $(CC) -dumpmachine 2>/dev/null)\n"
+        "ifneq (,$(filter x86_64% amd64%,$(ARCHIMEDES_TARGET_TRIPLE)))\n"
+        f"{line}\n"
+        "endif"
+    )
+
+
+def _cmake_condition(line: str) -> str:
+    return (
+        "if(CMAKE_SYSTEM_PROCESSOR MATCHES \"^(x86_64|AMD64|amd64)$\")\n"
+        f"  {line.strip()}\n"
+        "endif()"
+    )
+
+
+def conditional_flag_candidate(
+    case: CaseData,
+    hazard: ArchitectureHazard,
+    *,
+    claim_ids: list[str],
+    confidence: float,
+) -> PatchCandidate | None:
+    """Condition a directly observed x86-only flag in a recognized build declaration."""
+    path = PurePosixPath(hazard.path)
+    name = path.name.lower()
+    original = hazard.excerpt
+    if name == "makefile" or name.startswith("makefile.") or path.suffix.lower() == ".mk":
+        replacement = _makefile_condition(original, case.target_architecture.canonical)
+    elif name == "cmakelists.txt" or path.suffix.lower() == ".cmake":
+        replacement = _cmake_condition(original)
+    else:
+        return None
+    edit = PlannedEdit(
+        operation="replace_lines",
+        path=hazard.path,
+        expected_text=original,
+        replacement=replacement,
+        rationale=(
+            f"restrict {hazard.matched_text} to the architecture family where it is valid; "
+            "preserve the source optimization and target portable path"
+        ),
+        claim_dependencies=claim_ids,
+    )
+    components = {
+        "critical_claim_confidence": confidence,
+        "causal_coverage": 0.98,
+        "semantic_preservation": 0.86,
+        "expected_frontier_gain": 0.85,
+        "source_preservation": 0.90,
+        "rule_support": 0.90,
+        "minimality": 0.88,
+    }
+    return PatchCandidate(
+        id="candidate-001",
+        repair_family=RepairFamily.CONDITIONAL_COMPILER_FLAG,
+        rationale=edit.rationale,
+        assumption_claim_ids=claim_ids,
+        planned_edits=[edit],
+        confidence=confidence,
+        risk=0.08,
+        expected_frontier=FrontierStage.COMPILE,
+        expected_information_gain_if_built=0.80,
+        score_components=components,
+    )

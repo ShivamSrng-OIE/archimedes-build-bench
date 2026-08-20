@@ -1,0 +1,78 @@
+"""Tolerant, bounded ingestion of an official or synthetic Build-Bench case."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from ..architecture.aliases import normalize_architecture
+from ..constants import MAX_LOG_CHARACTERS
+from ..errors import CaseFormatError
+from ..schemas import CaseData, JSONValue
+from .paths import WorkspacePaths
+
+_METADATA_NAMES = ("case.json", "metadata.json", "case-metadata.json", "input.json")
+_LOG_NAMES = ("build.log", "failure.log", "initial-build.log", "log.txt")
+
+
+def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
+    for name in _METADATA_NAMES:
+        path = input_dir / name
+        if not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
+            raise CaseFormatError(f"cannot read case metadata {path.name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise CaseFormatError(f"case metadata {path.name} must contain an object")
+        return value
+    return {}
+
+
+def _first_string(metadata: dict[str, JSONValue], names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = metadata.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    architectures = metadata.get("architectures")
+    if isinstance(architectures, dict):
+        for name in names:
+            value = architectures.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _load_log(input_dir: Path, metadata: dict[str, JSONValue]) -> str:
+    inline = metadata.get("build_log") or metadata.get("failure_log")
+    if isinstance(inline, str):
+        return inline[:MAX_LOG_CHARACTERS]
+    configured = metadata.get("build_log_path")
+    names = ((configured,) if isinstance(configured, str) else ()) + _LOG_NAMES
+    for name in names:
+        path = input_dir / name
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(input_dir.resolve(strict=True))
+        except (OSError, ValueError):
+            continue
+        if resolved.is_file():
+            data = resolved.read_bytes()[:MAX_LOG_CHARACTERS]
+            return data.decode("utf-8", errors="replace")
+    return ""
+
+
+def load_case(paths: WorkspacePaths) -> CaseData:
+    """Load available metadata/log fields while leaving unknown architecture unknown."""
+    metadata = _load_metadata(paths.input)
+    source = _first_string(metadata, ("source_architecture", "source_arch", "source"))
+    target = _first_string(metadata, ("target_architecture", "target_arch", "target"))
+    case_id = _first_string(metadata, ("case_id", "id", "name")) or paths.root.name
+    return CaseData(
+        case_id=case_id,
+        source_architecture=normalize_architecture(source or "unknown"),
+        target_architecture=normalize_architecture(target or "unknown"),
+        build_log=_load_log(paths.input, metadata),
+        metadata=metadata,
+    )

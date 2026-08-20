@@ -1,0 +1,5 @@
+{
+  "unsupported_flag": ["unrecognized command-line option", "bad value for -march", "unsupported option"],
+  "atomic_link": ["undefined reference to __atomic", "undefined symbol: __atomic"],
+  "intrinsic": ["intrinsic requires target feature", "undeclared intrinsic"]
+}
