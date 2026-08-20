@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from src.context.token_budget import UsageBudget
 from src.errors import BudgetExhaustedError, ModelProtocolError
@@ -9,6 +12,7 @@ from src.models.base import ModelTask, ModelTier
 from src.models.json_protocol import parse_model_json
 from src.models.mock import MockModelClient
 from src.models.router import EscalationSignals, ModelRouter
+from src.observability import TraceRecorder
 
 
 FAILURE_RESPONSE = {
@@ -67,6 +71,18 @@ class ModelsLoggingTests(unittest.TestCase):
         value = redact_secrets("Authorization: Bearer secret API_KEY=abc? token=def")
         self.assertNotIn("secret", value)
         self.assertNotIn("API_KEY=abc", value)
+
+    def test_local_trace_is_bounded_and_redacts_sensitive_attributes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "execution-trace.jsonl"
+            trace = TraceRecorder(path, "case-1", max_events=1)
+            trace.record("ingestion", "started", api_key="plain-secret", detail="token=hidden")
+            trace.record("finalize", "ignored")
+            events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(events), 1)
+        attributes = events[0]["attributes"]
+        self.assertEqual(attributes["api_key"], "[REDACTED]")
+        self.assertNotIn("hidden", attributes["detail"])
 
 
 if __name__ == "__main__":

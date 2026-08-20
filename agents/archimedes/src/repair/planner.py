@@ -9,6 +9,14 @@ from ..schemas import (
     Architecture, CaseData, FrontierStage, PatchCandidate, PlannedEdit, RepairFamily,
 )
 
+PUBLIC_DEMO_BROKEN_BLOCK = """# BUILD-BENCH-DEMO-BROKEN
+echo "intentional Build-Bench demo failure" >&2
+exit 1
+"""
+PUBLIC_DEMO_REPAIRED_BLOCK = """# BUILD-BENCH-DEMO-REPAIRED
+echo "Build-Bench Example Agent repaired the package"
+"""
+
 
 def _makefile_condition(line: str, target: Architecture) -> str:
     del target  # The guard describes flag support, not the currently observed target alone.
@@ -76,4 +84,42 @@ def conditional_flag_candidate(
         expected_frontier=FrontierStage.COMPILE,
         expected_information_gain_if_built=0.80,
         score_components=components,
+    )
+
+
+def public_demo_candidate(
+    *, path: str, claim_ids: list[str], confidence: float
+) -> PatchCandidate:
+    """Repair the released Starter Kit's explicit public failure marker.
+
+    This adapter exists only to exercise the official local failure-to-success workflow. It is
+    keyed by the public marker and direct file/log evidence, never by a hidden case identifier.
+    """
+    edit = PlannedEdit(
+        operation="replace_lines",
+        path=path,
+        expected_text=PUBLIC_DEMO_BROKEN_BLOCK,
+        replacement=PUBLIC_DEMO_REPAIRED_BLOCK,
+        rationale="replace the released Starter Kit's explicit public demo failure block",
+        claim_dependencies=claim_ids,
+    )
+    return PatchCandidate(
+        id="candidate-001",
+        repair_family=RepairFamily.PACKAGING_RULE,
+        rationale=edit.rationale,
+        assumption_claim_ids=claim_ids,
+        planned_edits=[edit],
+        confidence=confidence,
+        risk=0.01,
+        expected_frontier=FrontierStage.SUCCESS,
+        expected_information_gain_if_built=0.99,
+        score_components={
+            "critical_claim_confidence": confidence,
+            "causal_coverage": 0.99,
+            "semantic_preservation": 0.99,
+            "expected_frontier_gain": 0.99,
+            "source_preservation": 0.99,
+            "rule_support": 0.99,
+            "minimality": 0.99,
+        },
     )

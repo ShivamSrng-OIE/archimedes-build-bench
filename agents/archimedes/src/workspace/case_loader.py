@@ -11,8 +11,14 @@ from ..errors import CaseFormatError
 from ..schemas import CaseData, JSONValue
 from .paths import WorkspacePaths
 
-_METADATA_NAMES = ("case.json", "metadata.json", "case-metadata.json", "input.json")
-_LOG_NAMES = ("build.log", "failure.log", "initial-build.log", "log.txt")
+_METADATA_NAMES = (
+    "task.json",
+    "case.json",
+    "metadata.json",
+    "case-metadata.json",
+    "input.json",
+)
+_LOG_NAMES = ("initial-build.log", "build.log", "failure.log", "log.txt")
 
 
 def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
@@ -48,7 +54,7 @@ def _load_log(input_dir: Path, metadata: dict[str, JSONValue]) -> str:
     inline = metadata.get("build_log") or metadata.get("failure_log")
     if isinstance(inline, str):
         return inline[:MAX_LOG_CHARACTERS]
-    configured = metadata.get("build_log_path")
+    configured = metadata.get("initial_build_log") or metadata.get("build_log_path")
     names = ((configured,) if isinstance(configured, str) else ()) + _LOG_NAMES
     for name in names:
         path = input_dir / name

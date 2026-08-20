@@ -77,6 +77,23 @@ class WorkspaceRepairTests(unittest.TestCase):
             with self.assertRaises(PatchValidationError):
                 apply_candidate(candidate(edit), PathPolicy(repo))
 
+    def test_multiline_edit_preserves_crlf(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            path = repo / "build.txt"
+            path.write_bytes(b"before\r\nold one\r\nold two\r\nafter\r\n")
+            edit = PlannedEdit(
+                "replace_lines",
+                "build.txt",
+                "new one\nnew two\n",
+                expected_text="old one\nold two\n",
+            )
+            apply_candidate(candidate(edit), PathPolicy(repo))
+            self.assertEqual(
+                path.read_bytes(),
+                b"before\r\nnew one\r\nnew two\r\nafter\r\n",
+            )
+
     def test_policy_critic_rejects_test_deletion_and_evaluator_path(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)

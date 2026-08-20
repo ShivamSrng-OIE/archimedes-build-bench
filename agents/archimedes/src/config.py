@@ -85,6 +85,8 @@ class RuntimeConfig:
     enable_external_knowledge: bool
     log_level: str
     debug: bool
+    trace_enabled: bool
+    trace_max_events: int
     context_mode: ContextMode
     random_seed: int
     features: FeatureFlags = field(default_factory=FeatureFlags)
@@ -142,6 +144,8 @@ class RuntimeConfig:
             enable_external_knowledge=_bool("ARCHIMEDES_ENABLE_EXTERNAL_KNOWLEDGE", False),
             log_level=os.getenv("ARCHIMEDES_LOG_LEVEL", "INFO").upper(),
             debug=_bool("ARCHIMEDES_DEBUG", False),
+            trace_enabled=_bool("ARCHIMEDES_ENABLE_LOCAL_TRACE", True),
+            trace_max_events=_int("ARCHIMEDES_TRACE_MAX_EVENTS", 500, 1),
             context_mode=context_mode,
             random_seed=_int("ARCHIMEDES_RANDOM_SEED", 0),
             features=features,

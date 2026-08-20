@@ -38,7 +38,7 @@ def _write_json(path: Path, payload: object) -> None:
 
 
 def write_agent_result(output_dir: Path, result: AgentResult) -> Path:
-    """Write the provisional protocol 0.1 result atomically to output/."""
+    """Write the official protocol 0.1 result atomically to output/."""
     path = output_dir / "agent-result.json"
     _write_json(path, result.to_dict())
     return path

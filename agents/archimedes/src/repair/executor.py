@@ -51,22 +51,27 @@ def _apply_operation(edit: PlannedEdit, original: str) -> tuple[str, int, int]:
         return edit.replacement, 1, max(1, edit.replacement.count("\n") + 1)
     if edit.expected_text is None:
         raise PatchValidationError(f"{edit.operation} requires expected_text: {edit.path}")
-    occurrences = original.count(edit.expected_text)
+    newline = "\r\n" if "\r\n" in original else "\r" if "\r" in original else "\n"
+    expected = edit.expected_text.replace("\r\n", "\n").replace("\r", "\n")
+    replacement = edit.replacement.replace("\r\n", "\n").replace("\r", "\n")
+    expected = expected.replace("\n", newline)
+    replacement = replacement.replace("\n", newline)
+    occurrences = original.count(expected)
     if occurrences != 1:
         raise PatchValidationError(
             f"expected text must occur exactly once in {edit.path}; found {occurrences}"
         )
-    prefix, suffix = original.split(edit.expected_text, 1)
+    prefix, suffix = original.split(expected, 1)
     start = prefix.count("\n") + 1
     if edit.operation == "replace_lines":
-        result = prefix + edit.replacement + suffix
+        result = prefix + replacement + suffix
     elif edit.operation == "insert_before":
-        result = prefix + edit.replacement + edit.expected_text + suffix
+        result = prefix + replacement + expected + suffix
     elif edit.operation == "insert_after":
-        result = prefix + edit.expected_text + edit.replacement + suffix
+        result = prefix + expected + replacement + suffix
     else:
         raise PatchValidationError(f"unsupported structured operation: {edit.operation}")
-    return result, start, start + max(0, edit.replacement.count("\n"))
+    return result, start, start + max(0, replacement.count(newline))
 
 
 def _atomic_write(path: Path, data: bytes, mode: int | None) -> None:

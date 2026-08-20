@@ -8,12 +8,53 @@ from pathlib import Path
 from .support import make_workspace, runtime_config
 
 from src.build.unavailable import UnavailableBuildFeedbackProvider
+from src.repair.planner import PUBLIC_DEMO_BROKEN_BLOCK, PUBLIC_DEMO_REPAIRED_BLOCK
 from src.reasoning.controller import RepairController
 from src.schemas import RepairFamily
 from src.workspace.paths import WorkspacePaths
 
 
 class ControllerTests(unittest.TestCase):
+    def test_official_task_contract_and_released_example_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            task = json.dumps({
+                "schema_version": "0.1",
+                "case_id": "hello",
+                "worktree": "/workspace/work/repo",
+                "initial_build_log": "/workspace/input/initial-build.log",
+            })
+            repo, output = make_workspace(root, metadata="{}", log="")
+            (root / "input" / "case.json").unlink()
+            (root / "input" / "task.json").write_text(task, encoding="utf-8")
+            (root / "input" / "initial-build.log").write_text(
+                "intentional Build-Bench demo failure\n"
+                "error: Bad exit status from /var/tmp/rpm-tmp.demo (%build)\n",
+                encoding="utf-8",
+            )
+            package_input = repo / "input"
+            package_input.mkdir()
+            spec = package_input / "buildbench-hello.spec"
+            spec.write_text(
+                "Name: buildbench-hello\n%build\n" + PUBLIC_DEMO_BROKEN_BLOCK + "%install\n",
+                encoding="utf-8",
+            )
+            outcome = RepairController(
+                config=runtime_config(root), workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+            self.assertEqual(outcome.result.modified_paths, ["input/buildbench-hello.spec"])
+            repaired = spec.read_text(encoding="utf-8")
+            self.assertNotIn(PUBLIC_DEMO_BROKEN_BLOCK, repaired)
+            self.assertIn(PUBLIC_DEMO_REPAIRED_BLOCK, repaired)
+            self.assertTrue((output / "metrics.json").is_file())
+            trace_path = output / "execution-trace.jsonl"
+            trace_events = [
+                json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(trace_events[0]["stage"], "case_ingestion")
+            self.assertEqual(trace_events[-1]["stage"], "finalize")
+
     def test_end_to_end_conditional_flag_repair(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

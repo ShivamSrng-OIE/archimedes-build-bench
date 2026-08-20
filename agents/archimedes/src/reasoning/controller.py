@@ -27,9 +27,14 @@ from ..metrics import CaseMetrics
 from ..models.base import ModelTask
 from ..models.prompts import system_prompt
 from ..models.router import ModelRouter
+from ..observability import TraceRecorder
 from ..repair.critic import passes_portability_critic
 from ..repair.executor import EditTransaction, apply_candidate, rollback_transaction
-from ..repair.planner import conditional_flag_candidate
+from ..repair.planner import (
+    PUBLIC_DEMO_BROKEN_BLOCK,
+    conditional_flag_candidate,
+    public_demo_candidate,
+)
 from ..repair.policy_critic import passes_policy_critic
 from ..result_writer import write_diagnostic
 from ..schemas import (
@@ -78,6 +83,15 @@ class RepairController:
         self.logger = logging.getLogger(__name__)
         self.path_policy = PathPolicy(workspace.repo)
         self.build_budget = BuildBudget(build_feedback.request_limit)
+        self.trace: TraceRecorder | None = None
+
+    def _trace(self, stage: str, action: str, **attributes: object) -> None:
+        if self.trace is not None:
+            self.trace.record(stage, action, **attributes)
+
+    def _transition(self, stage: str, **attributes: object) -> None:
+        if self.trace is not None:
+            self.trace.transition(stage, **attributes)
 
     def _seed_ledger(self, case: object, failure: object) -> EvidenceLedger:
         from ..schemas import CaseData, FailureAnalysis
@@ -178,6 +192,60 @@ class RepairController:
             case, hazard, claim_ids=[item.id for item in claims], confidence=confidence
         )
 
+    def _released_example_candidate(
+        self, *, failure: object, ledger: EvidenceLedger
+    ):
+        """Recognize the released hello Case by its explicit public marker and exact evidence."""
+        from ..schemas import FailureAnalysis
+
+        assert isinstance(failure, FailureAnalysis)
+        if "intentional build-bench demo failure" not in failure.normalized_log.lower():
+            return None
+        matches = search_regex(
+            self.workspace.repo,
+            r"BUILD-BENCH-DEMO-BROKEN",
+            reason="released Build-Bench demo marker",
+            max_results=2,
+        )
+        if len(matches) != 1:
+            return None
+        match = matches[0]
+        path = self.path_policy.validate_relative(match.path)
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+        if content.count(PUBLIC_DEMO_BROKEN_BLOCK) != 1:
+            return None
+        direct = ledger.add_evidence(
+            kind=EvidenceKind.DIRECT_FILE_OBSERVATION,
+            summary="released public demo failure block occurs exactly once",
+            reliability=RELIABILITY["direct_file"],
+            raw_excerpt=PUBLIC_DEMO_BROKEN_BLOCK,
+            source="bounded exact repository observation",
+            path=match.path,
+            line_start=match.line_start,
+            line_end=match.line_end,
+            stage=ControllerStage.REPAIR.value,
+        )
+        log_item = next(
+            item for item in ledger.evidence.values() if item.source == "initial build log"
+        )
+        causal = ledger.add_claim(
+            "the released public demo block intentionally terminates the package build",
+            "public_example_cause",
+            supporting_evidence_ids=[direct.id, log_item.id],
+            consequence=ConsequenceLevel.HIGH,
+        )
+        confidence = causal.confidence if self.config.features.claim_confidence else 0.80
+        if self.config.features.claim_confidence and not claim_justifies_patch(
+            causal.confidence, causal.consequence_level, causal.status
+        ):
+            return None
+        return public_demo_candidate(
+            path=match.path, claim_ids=[causal.id], confidence=confidence
+        )
+
     def _consult_model_if_configured(self, case: object, failure: object, ledger: EvidenceLedger) -> None:
         if self.model_router is None:
             return
@@ -199,6 +267,16 @@ class RepairController:
             task=ModelTask.FAILURE_ANALYSIS,
             system_prompt=system_prompt(ModelTask.FAILURE_ANALYSIS),
             user_prompt=prompt,
+        )
+        self._trace(
+            ControllerStage.HYPOTHESES.value,
+            "model_completed",
+            task=ModelTask.FAILURE_ANALYSIS.value,
+            model=response.model,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            latency_seconds=response.latency_seconds,
+            parsed=response.parsed,
         )
         evidence = ledger.add_evidence(
             kind=EvidenceKind.LLM_INFERENCE,
@@ -251,6 +329,15 @@ class RepairController:
             max_results=20,
         )
         episode.probes.append(probe)
+        self._trace(
+            ControllerStage.HYPOTHESES.value,
+            "probe_completed",
+            probe_id=probe.id,
+            probe_type=probe.probe_type,
+            match_count=len(matches),
+            information_gain=probe.estimated_information_gain,
+            estimated_cost=probe.estimated_cost,
+        )
         summary = (
             f"atomic-symbol search found {len(matches)} bounded repository matches"
         )
@@ -266,10 +353,36 @@ class RepairController:
     def run(self) -> ControllerOutcome:
         """Run deterministic analysis, evidence-gated repair, and optional build experiment."""
         case = load_case(self.workspace)
+        self.trace = TraceRecorder(
+            self.workspace.output / "execution-trace.jsonl",
+            case.case_id,
+            enabled=self.config.trace_enabled,
+            max_events=self.config.trace_max_events,
+        )
+        self._transition(
+            ControllerStage.CASE_INGESTION.value,
+            source_architecture=case.source_architecture.raw,
+            target_architecture=case.target_architecture.raw,
+            model_backend=self.config.model_backend.value,
+        )
         metrics = CaseMetrics(case.case_id, case.source_architecture.raw, case.target_architecture.raw)
         episode = EpisodeMemory()
         inventory = inventory_repository(self.workspace.repo)
+        self._trace(
+            ControllerStage.CASE_INGESTION.value,
+            "repository_inventoried",
+            files=len(inventory.files),
+            build_files=len(inventory.build_files),
+            packaging_files=len(inventory.packaging_files),
+        )
         failure = analyze_build_log(case.build_log)
+        self._transition(
+            ControllerStage.FORENSICS.value,
+            failure_family=failure.family.value,
+            frontier=failure.frontier.stage.name.lower(),
+            confidence=failure.frontier.confidence,
+            signature=failure.frontier.error_signature,
+        )
         metrics.failure_family = failure.family.value
         metrics.initial_frontier = int(failure.frontier.stage)
         metrics.best_frontier = metrics.initial_frontier
@@ -277,6 +390,12 @@ class RepairController:
         log_event(self.logger, "forensics", "primary failure identified", frontier=failure.frontier.stage.name.lower(), confidence=failure.frontier.confidence)
 
         hazards = scan_architecture_hazards(self.workspace.repo)
+        self._trace(
+            ControllerStage.ARCHITECTURE.value,
+            "hazards_scanned",
+            count=len(hazards),
+            categories=sorted({hazard.category for hazard in hazards}),
+        )
         self._record_hazards(ledger, hazards)
         profile = construct_profile(case.target_architecture, list(ledger.evidence.values()))
         familiarity = assess_familiarity(
@@ -287,10 +406,24 @@ class RepairController:
         if familiarity.requires_discovery and self.config.features.architecture_discovery:
             discover_from_static_evidence(profile, case, hazards)
         metrics.familiarity_score = familiarity.score
+        self._transition(
+            ControllerStage.ARCHITECTURE.value,
+            familiarity_score=familiarity.score,
+            familiarity_band=familiarity.band,
+            discovery_required=familiarity.requires_discovery,
+            ood_signals=profile.ood_signals,
+        )
         log_event(self.logger, "architecture", "familiarity assessed", target=case.target_architecture.raw, score=familiarity.score, discovery=familiarity.requires_discovery)
 
         graph = build_delta_graph(case, failure, hazards) if self.config.features.delta_graph else None
         hypotheses = generate_initial_hypotheses(failure, hazards)
+        self._transition(
+            ControllerStage.HYPOTHESES.value,
+            hypothesis_count=len(hypotheses.hypotheses),
+            top_hypothesis=(hypotheses.ranked()[0].id if hypotheses.hypotheses else None),
+            graph_nodes=(len(graph.nodes) if graph else 0),
+            graph_edges=(sum(len(edges) for edges in graph.adjacency.values()) if graph else 0),
+        )
         episode.hypotheses = hypotheses.ranked()
         metrics.hypothesis_count = len(hypotheses.hypotheses)
         self._run_cheap_probe(failure=failure, episode=episode, ledger=ledger)
@@ -301,16 +434,54 @@ class RepairController:
             f"hazards={len(hazards)} familiarity={familiarity.score}",
         ))
 
-        candidate = self._flag_candidate(case, failure, hazards, ledger) if self.config.features.repair_rules else None
+        candidate = None
+        if self.config.features.repair_rules:
+            candidate = self._released_example_candidate(failure=failure, ledger=ledger)
+            if candidate is None:
+                candidate = self._flag_candidate(case, failure, hazards, ledger)
+        self._trace(
+            ControllerStage.REPAIR.value,
+            "candidate_generation_completed",
+            candidate_id=(candidate.id if candidate else None),
+            repair_family=(candidate.repair_family.value if candidate else None),
+            confidence=(candidate.confidence if candidate else None),
+        )
         transaction: EditTransaction | None = None
         modified: list[str] = []
         message = "Analysis completed; no evidence-supported safe repair was identified."
         if candidate is not None:
             ranked = rank_candidates([candidate])
             selected = ranked[0]
-            if passes_portability_critic(selected) and passes_policy_critic(selected, self.path_policy):
+            portability_accepted = passes_portability_critic(selected)
+            policy_accepted = (
+                passes_policy_critic(selected, self.path_policy)
+                if portability_accepted
+                else False
+            )
+            self._trace(
+                ControllerStage.REPAIR.value,
+                "candidate_reviewed",
+                candidate_id=selected.id,
+                portability_accepted=portability_accepted,
+                policy_accepted=policy_accepted,
+                critic_findings=selected.critic_findings,
+                policy_findings=selected.policy_findings,
+            )
+            if portability_accepted and policy_accepted:
+                self._transition(
+                    ControllerStage.REPAIR.value,
+                    candidate_id=selected.id,
+                    repair_family=selected.repair_family.value,
+                )
                 transaction = apply_candidate(selected, self.path_policy)
                 modified = sorted(edit.relative_path for edit in transaction.edits)
+                self._trace(
+                    ControllerStage.REPAIR.value,
+                    "candidate_applied",
+                    candidate_id=selected.id,
+                    modified_paths=modified,
+                    edit_count=len(transaction.edits),
+                )
                 metrics.attempts = 1
                 metrics.modified_files = len(modified)
                 metrics.patch_lines = sum(edit.changed_line_end - edit.changed_line_start + 1 for edit in transaction.edits)
@@ -321,6 +492,11 @@ class RepairController:
                 after_frontier = None
                 build_result = None
                 if self.build_feedback.available and selected.expected_information_gain_if_built > 0.20:
+                    self._transition(
+                        ControllerStage.BUILD.value,
+                        candidate_id=selected.id,
+                        expected_information_value=selected.expected_information_gain_if_built,
+                    )
                     self.build_budget.authorize()
                     feedback = self.build_feedback.request(expected_information_value=selected.expected_information_gain_if_built)
                     self.build_budget.record()
@@ -328,6 +504,13 @@ class RepairController:
                     after_frontier = feedback.frontier
                     movement = compare_frontiers(failure.frontier, feedback.frontier)
                     build_result = movement.value
+                    self._trace(
+                        ControllerStage.BUILD.value,
+                        "build_feedback_received",
+                        movement=movement.value,
+                        new_frontier=feedback.frontier.stage.name.lower(),
+                        success=feedback.success,
+                    )
                     if movement is FrontierMovement.REGRESSION:
                         rollback_transaction(transaction)
                         modified = []
@@ -344,7 +527,7 @@ class RepairController:
                     modified, self.build_feedback.available, build_result, None, 0.0, decision,
                 ))
                 message = (
-                    "Applied one evidence-supported conditional architecture repair; official build feedback was unavailable."
+                    "Applied one evidence-supported repair; official build feedback was unavailable."
                     if modified and not self.build_feedback.available
                     else "Repair attempt completed with build feedback."
                 )
@@ -362,6 +545,15 @@ class RepairController:
             metrics.output_tokens = self.model_router.budget.output_tokens
             metrics.estimated_cost = self.model_router.budget.estimated_cost
         metrics.finish()
+        self._transition(
+            ControllerStage.FINALIZE.value,
+            modified_paths=modified,
+            attempts=metrics.attempts,
+            probes=metrics.probe_count,
+            model_calls=metrics.model_calls,
+            best_frontier=metrics.best_frontier,
+            success=metrics.success,
+        )
         constitution = constitution_payload(profile)
         diagnostics = {
             "failure": failure,

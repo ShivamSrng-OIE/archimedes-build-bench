@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 AGENT = ROOT / "agents" / "archimedes"
 CASES = ROOT / "dev" / "synthetic_cases"
 CONFIGURATIONS = ROOT / "dev" / "configurations.json"
+STARTER_KIT_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 FEATURE_DEFAULTS = {
     "ENABLE_DETERMINISTIC_FORENSICS": "true",
     "ENABLE_CLAIM_CONFIDENCE": "true",
@@ -60,7 +61,13 @@ def select_cases(names: list[str]) -> list[Path]:
     return [available[name] for name in names]
 
 
-def run_case(case_dir: Path, configuration: str, config_env: dict[str, str], seed: int) -> dict[str, object]:
+def run_case(
+    case_dir: Path,
+    configuration: str,
+    config_env: dict[str, str],
+    seed: int,
+    trace_dir: Path | None = None,
+) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="archimedes-eval-") as temp_name:
         workspace = Path(temp_name)
         input_dir = workspace / "input"
@@ -86,6 +93,13 @@ def run_case(case_dir: Path, configuration: str, config_env: dict[str, str], see
         metrics = json.loads(metrics_path.read_text(encoding="utf-8")) if metrics_path.exists() else {}
         result_path = output_dir / "agent-result.json"
         result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
+        trace_path = output_dir / "execution-trace.jsonl"
+        persisted_trace: str | None = None
+        if trace_dir is not None and trace_path.is_file():
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            destination = trace_dir / f"{metadata['case_id']}-{configuration}.jsonl"
+            shutil.copy2(trace_path, destination)
+            persisted_trace = str(destination)
         modified = result.get("modified_paths", [])
         expected_file = metadata["expected_causal_file"]
         return {
@@ -101,10 +115,20 @@ def run_case(case_dir: Path, configuration: str, config_env: dict[str, str], see
             "expected_repair_family_selected": metrics.get("selected_repair_family") == metadata["expected_repair_family"],
             "verified_build_success": None,
             "git_commit": git_commit(),
-            "starter_kit_version": "not-detected",
+            "starter_kit_version": STARTER_KIT_VERSION,
+            "temperature": 0,
+            "feature_flags": json.dumps(
+                {
+                    key: environment[key]
+                    for key in sorted(FEATURE_DEFAULTS)
+                    if key.startswith("ENABLE_") or key == "ARCHIMEDES_CONTEXT_MODE"
+                },
+                sort_keys=True,
+            ),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "seed": seed,
             "case_content_sha256": hashlib.sha256((case_dir / "case.json").read_bytes()).hexdigest(),
+            "trace_path": persisted_trace,
         }
 
 
@@ -128,9 +152,17 @@ def main() -> int:
     parser.add_argument("--case", action="append", default=[], dest="cases")
     parser.add_argument("--output", type=Path, default=ROOT / "dev" / "results.jsonl")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--trace-dir",
+        type=Path,
+        help="copy each local execution trace to this development-only directory",
+    )
     args = parser.parse_args()
     config_env = load_configuration(args.configuration)
-    rows = [run_case(path, args.configuration, config_env, args.seed) for path in select_cases(args.cases)]
+    rows = [
+        run_case(path, args.configuration, config_env, args.seed, args.trace_dir)
+        for path in select_cases(args.cases)
+    ]
     write_results(args.output, rows)
     print(f"wrote {len(rows)} rows to {args.output}")
     return 0

@@ -7,3 +7,7 @@ __pycache__/
 .ruff_cache/
 dev/*.jsonl
 dev/*.csv
+dev/*.html
+dev/traces/
+runs/
+dist/

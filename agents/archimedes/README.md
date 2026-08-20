@@ -7,15 +7,14 @@ portable software repair. No benchmark-performance claim is made by this impleme
 
 ## Competition execution model
 
-The agent expects `BB_WORKSPACE` to name a workspace with read-only-style `input/`, the only
+The agent follows Build-Bench Starter Kit `0.1.0-rc.2`. It expects `BB_WORKSPACE` to name a
+workspace with read-only-style `input/`, the only
 editable package tree at `work/repo/`, and writable `output/`. If the variable is absent, the
-provisional protocol default is `/workspace`. `python -m src.main` runs exactly one case and writes
+official protocol default is `/workspace`. `python -m src.main` runs exactly one case and writes
 `output/agent-result.json`; the repair itself is the changed `work/repo` tree.
 
-The checked-in manifest and result writer use the specification's provisional schema/protocol
-`0.1`. No official Build-Bench Starter Kit was present when this version was implemented, so these
-must be compared with the installed kit before submission. The manifest intentionally contains no
-undocumented keys. The agent bundle uses only Python 3.11 standard-library modules.
+The checked-in manifest and result writer use the kit's schema/protocol `0.1`. The manifest contains
+no undocumented keys. The agent bundle uses only Python 3.11 standard-library modules.
 
 ## System architecture
 
@@ -85,10 +84,15 @@ when proven, and ABI width assumptions. It contains no package- or case-specific
 Repository contents and logs are untrusted input. They are inspected statically and inserted into
 model prompts with an explicit prompt-injection warning. Model output cannot execute shell commands;
 only `replace_lines`, `insert_before`, `insert_after`, and `create_file` operations are accepted.
-File deletion is disabled. Edits cannot target input/output, tests via deletion, hidden/evaluator
+File deletion is disabled. Edits cannot target workspace input/output, tests via deletion, hidden/evaluator
 paths, VCS metadata, dummy artifacts, validation bypasses, sandbox escapes, or arbitrary command
 execution. Text edits reject probable binaries and non-UTF-8 data, verify expected text/hash, write
 through same-directory atomic replacement, and record before/after hashes.
+
+The released `hello` Example Case has one explicit public marker adapter so the official local
+failure-to-success workflow remains testable without a paid model. It activates only when the public
+failure phrase is present in `initial-build.log`, the public marker occurs exactly once in the
+worktree, and the expected block matches byte-for-byte. It does not inspect or branch on hidden IDs.
 
 ## Model providers and local development
 
@@ -146,14 +150,18 @@ expand from 5–10 representative cases to 20–30 only after traces and cost ar
 ## Diagnostics, reproducibility, and limitations
 
 Bounded development diagnostics are written as `evidence-ledger.json`,
-`architecture-constitution.json`, `repair-episode.json`, and `metrics.json`. They contain no
-credentials. Filesystem ordering and per-case identifiers are deterministic; the experiment runner
+`architecture-constitution.json`, `repair-episode.json`, `metrics.json`, and
+`execution-trace.jsonl`. The JSONL trace exposes the state-machine flow and bounded decision
+metadata without raw source, raw logs, prompts, model responses, or credentials. It is local-only,
+requires no service or extra dependency, and can be disabled with
+`ARCHIMEDES_ENABLE_LOCAL_TRACE=false`. Filesystem ordering and per-case identifiers are
+deterministic; the experiment runner
 records commit, UTC timestamp, seed, model identifier, feature configuration, and case metadata hash.
 
 Important current limitations:
 
-- No official Starter Kit, examples, schemas, readiness CLI, or exact version were present locally.
-- The official network/API-key injection policy, runtime budgets, resource limits, and build-feedback
+- The merged official Starter Kit is `0.1.0-rc.2`; later releases may require adapter updates.
+- The official network/API-key injection policy, final runtime budgets, resource limits, and build-feedback
   request/response contract remain unknown and are represented through configuration/adapters.
 - `BbBuildFeedbackProvider` intentionally remains unavailable. Host compiler results are never
   treated as official target-build truth.
@@ -162,7 +170,7 @@ Important current limitations:
   but require additional validated planners/model evidence.
 - QEMU is only a discovered capability; no emulator result is treated as definitive hardware,
   kernel, atomic, or memory-model evidence.
-- The provisional archive must be produced with official Starter Kit tooling once available. Never
+- The submission archive is produced only with the root Starter Kit tooling. Never
   include `.env`, credentials, caches, prior logs, model traces, or the development corpus.
 
 These choices preserve the research rationale: claim-level confidence prevents one dangerous weak
@@ -178,10 +186,10 @@ From the repository root:
 ```text
 python -m unittest discover -s tests -t . -v
 python -m compileall agents/archimedes/src
-ruff check agents/archimedes/src tests dev/evaluate.py
+ruff check agents/archimedes/src tests dev/evaluate.py dev/trace_viewer.py
 mypy agents/archimedes/src
 python dev/evaluate.py --configuration A --case unconditional_x86_sse_flag
 ```
 
-Official `bb doctor`, `bb test`, `bb check`, `bb ready`, packaging, ZIP hashing, and upload remain
-blocked until the official Starter Kit is actually installed. Archimedes never uploads automatically.
+Run official `bb doctor`, `bb test`, `bb check`, and `bb ready` from the repository root. They require
+the Docker Linux daemon and the kit's pinned runtime images. Archimedes never uploads automatically.
