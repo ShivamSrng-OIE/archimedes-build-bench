@@ -1,0 +1,1 @@
+src/crc.c:3:12: error: intrinsic _mm_crc32_u64 requires target feature sse4.2

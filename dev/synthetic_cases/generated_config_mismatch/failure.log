@@ -1,0 +1,1 @@
+include/config.h:2:2: error: #error generated architecture mismatch

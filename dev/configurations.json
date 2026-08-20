@@ -1,0 +1,13 @@
+{
+  "A": {"description": "deterministic repair rules only", "ARCHIMEDES_MODEL_BACKEND": "mock", "ENABLE_CLAIM_CONFIDENCE": "false", "ENABLE_ARCHITECTURE_DISCOVERY": "false", "ENABLE_DELTA_GRAPH": "false", "ENABLE_SEMANTIC_ANCHORS": "false", "ENABLE_ACTIVE_PROBES": "false", "ENABLE_FAILURE_FRONTIER": "false"},
+  "B": {"description": "local LLM with raw capped context", "ARCHIMEDES_MODEL_BACKEND": "local_openai_compatible", "ARCHIMEDES_CONTEXT_MODE": "raw_context", "ENABLE_CLAIM_CONFIDENCE": "false", "ENABLE_SEMANTIC_ANCHORS": "false", "ENABLE_ARCHITECTURE_DISCOVERY": "false", "ENABLE_ACTIVE_PROBES": "false"},
+  "C": {"description": "strong model with minimal context", "ARCHIMEDES_CONTEXT_MODE": "raw_context", "ENABLE_CLAIM_CONFIDENCE": "false", "ENABLE_SEMANTIC_ANCHORS": "false", "ENABLE_ARCHITECTURE_DISCOVERY": "false", "ENABLE_ACTIVE_PROBES": "false"},
+  "D": {"description": "Archimedes with local LLM", "ARCHIMEDES_MODEL_BACKEND": "local_openai_compatible"},
+  "E": {"description": "Archimedes with configured remote strong model"},
+  "F": {"description": "Archimedes without claim-level metacognition", "ENABLE_CLAIM_CONFIDENCE": "false"},
+  "G": {"description": "Archimedes without Semantic Anchors", "ENABLE_SEMANTIC_ANCHORS": "false"},
+  "H": {"description": "Archimedes without Architecture Discovery", "ENABLE_ARCHITECTURE_DISCOVERY": "false"},
+  "I": {"description": "Archimedes without active probes", "ENABLE_ACTIVE_PROBES": "false"},
+  "J": {"description": "Archimedes without Failure Frontier", "ENABLE_FAILURE_FRONTIER": "false"},
+  "K": {"description": "full Archimedes with caller-selected model backend"}
+}

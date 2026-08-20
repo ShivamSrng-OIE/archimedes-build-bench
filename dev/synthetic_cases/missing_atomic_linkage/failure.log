@@ -1,0 +1,2 @@
+ld: main.o: undefined reference to `__atomic_compare_exchange_16'
+collect2: error: ld returned 1 exit status

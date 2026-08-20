@@ -1,0 +1,1 @@
+ld: dispatch.o: undefined reference to `optimized_crc'

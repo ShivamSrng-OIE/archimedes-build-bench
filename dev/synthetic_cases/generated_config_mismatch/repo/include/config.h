@@ -1,0 +1,2 @@
+#define GENERATED_FOR_X86_64 1
+#define POINTER_BYTES 8

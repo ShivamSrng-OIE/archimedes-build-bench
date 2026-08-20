@@ -1,0 +1,1 @@
+rpmbuild: error: Installed (but unpackaged) file(s) found: /usr/lib64/libdemo.so
