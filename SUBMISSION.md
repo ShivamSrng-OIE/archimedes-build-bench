@@ -46,6 +46,19 @@ is available and exercised, the submission is not competition-ready even if loca
 
 ## Validate in Linux or WSL2
 
+Run the development-side strict audit first. It does not replace organizer checks, and it exits
+nonzero until every local, model, registration, and hosted qualification gate is explicitly proven:
+
+```bash
+python dev/submission_preflight.py --json
+```
+
+After registration, a real-model smoke run, and submission access are confirmed, add
+`--team-registered --submission-access-confirmed --model-smoke-sha256 <CURRENT_ZIP_SHA256>`. Add
+`--hosted-smoke-sha256 <PLATFORM_VERSION_SHA256>` only after that exact immutable ZIP passes the
+platform test. The supplied digests must match the current archive. The registration/access flags
+are manual attestations; they do not bypass or simulate any organizer check.
+
 Run from the Starter Kit root, using the organizer-pinned images:
 
 ```bash
