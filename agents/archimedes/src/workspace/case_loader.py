@@ -18,7 +18,17 @@ _METADATA_NAMES = (
     "case-metadata.json",
     "input.json",
 )
-_LOG_NAMES = ("initial-build.log", "build.log", "failure.log", "log.txt")
+_LOG_NAMES = (
+    "initial-build.log",
+    "target-failure.log",
+    "logs/target-failure.log",
+    "build.log",
+    "failure.log",
+    "log.txt",
+)
+_RELEASED_CASE_SCHEMA = "buildbench.case.v0.1"
+_RELEASED_TASK_TYPE = "cross_arch_package_build_repair"
+_MAX_METADATA_BYTES = 1_000_000
 
 
 def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
@@ -41,20 +51,86 @@ def _first_string(metadata: dict[str, JSONValue], names: tuple[str, ...]) -> str
         value = metadata.get(name)
         if isinstance(value, str) and value.strip():
             return value.strip()
-    architectures = metadata.get("architectures")
-    if isinstance(architectures, dict):
+    for container_name in ("architectures", "platform"):
+        container = metadata.get(container_name)
+        if not isinstance(container, dict):
+            continue
         for name in names:
-            value = architectures.get(name)
+            value = container.get(name)
             if isinstance(value, str) and value.strip():
                 return value.strip()
     return None
+
+
+def _nested_string(
+    metadata: dict[str, JSONValue],
+    containers: tuple[str, ...],
+    names: tuple[str, ...],
+) -> str | None:
+    for container_name in containers:
+        container = metadata.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        for name in names:
+            value = container.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _released_case_identity(repo_dir: Path) -> tuple[str | None, str | None, str | None]:
+    """Read only the documented identity fields from a released worktree case file."""
+    candidate = repo_dir / "case.json"
+    try:
+        if candidate.is_symlink():
+            return None, None, None
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(repo_dir.resolve(strict=True))
+        if not resolved.is_file() or resolved.stat().st_size > _MAX_METADATA_BYTES:
+            return None, None, None
+        value = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return None, None, None
+    if not isinstance(value, dict) or value.get("schema_version") != _RELEASED_CASE_SCHEMA:
+        return None, None, None
+    task = value.get("task")
+    platform = value.get("platform")
+    if (
+        not isinstance(task, dict)
+        or task.get("type") != _RELEASED_TASK_TYPE
+        or not isinstance(platform, dict)
+    ):
+        return None, None, None
+
+    def documented_string(container: dict[str, JSONValue], name: str) -> str | None:
+        field = container.get(name)
+        return field.strip() if isinstance(field, str) and field.strip() else None
+
+    return (
+        documented_string(platform, "source_arch"),
+        documented_string(platform, "target_arch"),
+        documented_string(value, "case_id"),
+    )
 
 
 def _load_log(input_dir: Path, metadata: dict[str, JSONValue]) -> str:
     inline = metadata.get("build_log") or metadata.get("failure_log")
     if isinstance(inline, str):
         return inline[:MAX_LOG_CHARACTERS]
-    configured = metadata.get("initial_build_log") or metadata.get("build_log_path")
+    configured = (
+        metadata.get("initial_build_log")
+        or metadata.get("build_log_path")
+        or _nested_string(
+            metadata,
+            ("task",),
+            ("initial_failure_evidence", "initial_build_log", "build_log_path"),
+        )
+        or _nested_string(
+            metadata,
+            ("paths",),
+            ("target_failure_log", "initial_build_log", "build_log_path"),
+        )
+    )
     names = ((configured,) if isinstance(configured, str) else ()) + _LOG_NAMES
     for name in names:
         path = input_dir / name
@@ -74,9 +150,16 @@ def load_case(paths: WorkspacePaths) -> CaseData:
     metadata = _load_metadata(paths.input)
     source = _first_string(metadata, ("source_architecture", "source_arch", "source"))
     target = _first_string(metadata, ("target_architecture", "target_arch", "target"))
-    case_id = _first_string(metadata, ("case_id", "id", "name")) or paths.root.name
+    case_id = _first_string(metadata, ("case_id", "id", "name"))
+    if source is None or target is None or case_id is None:
+        released_source, released_target, released_case_id = _released_case_identity(
+            paths.repo
+        )
+        source = source or released_source
+        target = target or released_target
+        case_id = case_id or released_case_id
     return CaseData(
-        case_id=case_id,
+        case_id=case_id or paths.root.name,
         source_architecture=normalize_architecture(source or "unknown"),
         target_architecture=normalize_architecture(target or "unknown"),
         build_log=_load_log(paths.input, metadata),

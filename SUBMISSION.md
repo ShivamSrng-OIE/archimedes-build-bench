@@ -1,128 +1,189 @@
-# Build-Bench submission checklist for Archimedes
+# Build-Bench submission and evaluation checklist for Archimedes
 
-This checklist complements the versioned Starter Kit, Submission Guide, and Competition Rules.
-If they conflict, the current organizer-published materials and the Starter Kit release used for
-the upload take precedence.
+Last live-site audit: **1 September 2026 UTC**.
 
-Official references: [Build-Bench Challenge](https://aiops-lab-nku.github.io/BuildBench/),
-[Participate and Submit](https://aiops-lab-nku.github.io/BuildBench/submission.html), and the
-[My Submissions portal](https://aiops-lab-nku.github.io/BuildBench/my-submissions.html). The
-[ICSE 2027 Competition Track](https://conf.researchr.org/track/icse-2027/icse-2027-competition-track)
-is a separate paper/track workflow.
+This checklist is subordinate to the current CSTCloud platform, versioned competition rules, and
+the Starter Kit used to create an upload. The former GitHub Pages site is no longer the operational
+submission portal.
 
-## Current competition schedule
+Official participant pages:
 
-- Team registration opens with the protocol freeze on **31 August 2026**.
-- Public development, validation, uploads, and Hosted Smoke Tests open on **7 September 2026**.
-- The final qualified Agent version must be frozen by **13 November 2026**.
-- Organizers plan to publish final results by **20 November 2026**.
+- [Competition overview](https://matrix.cstcloud.cn/build-bench/index.html)
+- [Challenge definition](https://matrix.cstcloud.cn/build-bench/task.html)
+- [Participation and package contract](https://matrix.cstcloud.cn/build-bench/submission.html)
+- [Competition rules](https://matrix.cstcloud.cn/build-bench/rules.html)
+- [Timeline](https://matrix.cstcloud.cn/build-bench/timeline.html)
+- [FAQ](https://matrix.cstcloud.cn/build-bench/faq.html)
+- [Data and downloads](https://matrix.cstcloud.cn/build-bench/data-downloads.html)
+- [My Submissions](https://matrix.cstcloud.cn/build-bench/my-submissions.html)
+- [Leaderboard](https://matrix.cstcloud.cn/build-bench/leaderboard.html)
+- [Contact](https://matrix.cstcloud.cn/build-bench/contact.html)
 
-The current checkout contains Starter Kit `0.1.0-rc.2`, but it predates the 31 August protocol
-freeze. Refresh from the official Data & Downloads release before the first official upload and
-reconcile any manifest, workspace, credential, build-feedback, or resource-policy changes.
+## Current immutable submission
 
-## Register the Team
+The following organizer-run qualification evidence was reported from the CSTCloud portal:
 
-1. The Team leader registers on the Build-Bench competition website.
-2. Use a unique Team name and provide an email address for every member.
-3. Include at most five people, including the Team leader.
-4. Each person and email address may appear on only one Team.
-5. Disclose organizer conflicts through the official support channel.
-
-## Freeze the method configuration
-
-The competition requires an LLM foundation model. Before qualification, record and test:
-
-- exact fast and strong model names and versions;
-- provider and endpoint type;
-- organizer-approved credential-injection mechanism;
-- network policy and availability assumptions;
-- model-call, token, monetary, build-request, iteration, time, CPU, memory, and storage limits;
-- prompt strategy, retrieval sources, static tools, external data, and known nondeterminism.
-
-Never put an API key or `.env` file in `agents/archimedes` or the ZIP. The current rulebook says
-the organizer credential and network mechanism will be published separately. Until that mechanism
-is available and exercised, the submission is not competition-ready even if local checks pass.
-
-## Validate in Linux or WSL2
-
-Run the development-side strict audit first. It does not replace organizer checks, and it exits
-nonzero until every local, model, registration, and hosted qualification gate is explicitly proven:
-
-```bash
-python dev/submission_preflight.py --json
+```text
+Agent:          archimedes
+Agent version:  0.2.2
+Submission ID:  20260901T004910Z-0a48b255
+Status:         Qualified
+Hosted Smoke:   hello succeeded (1/1)
+Validation:     static check, Agent execution, canonical patch, and final build all succeeded
 ```
 
-After registration, organizer-compatible model delivery, a real-model smoke run, and submission
-access are confirmed, add `--team-registered --submission-access-confirmed
---competition-model-access-confirmed --model-smoke-sha256 <CURRENT_ZIP_SHA256>`. Add
-`--hosted-smoke-sha256 <PLATFORM_VERSION_SHA256>` only after that exact immutable ZIP passes the
-platform test. The supplied digests must match the current archive. The registration/access flags
-are manual attestations; they do not bypass or simulate any organizer check.
+The locally retained archive is:
 
-Run from the Starter Kit root, using the organizer-pinned images:
+```text
+dist/agent-submission-archimedes-v0.2.2-20260901T004910Z-0a48b255.zip
+SHA-256: 96123cf3af5e153663ce47ac45763a994917453defcce8d2a8dd937c760c1a63
+```
+
+The portal digest still needs to be compared with this complete local digest. A matching Agent name
+and version alone do not prove byte identity.
+
+Qualification proves that this immutable bundle satisfies the current static package checks and the
+Hosted Smoke Test contract. It does **not** prove repair performance on the public Development Cases,
+compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
+evaluation.
+
+Source development now targets Archimedes `0.2.3`. Any source, manifest, dependency, or configuration
+change after the qualified `0.2.2` upload requires a new immutable upload. Never describe local
+`0.2.3` results as results of submission `20260901T004910Z-0a48b255`.
+
+## Current platform and release state
+
+At the audit time:
+
+- Starter Kit `v0.1.0-rc.2` remains the latest published kit and matches this checkout's `VERSION`.
+- Managed Python 3.11 and Agent protocol `0.1` remain the published submission contract.
+- Development Cases `v0.1` are published: 200 Ubuntu Launchpad cases, split evenly between
+  `x86_64-to-aarch64` and `aarch64-to-x86_64`.
+- The Development Cases archive SHA-256 is
+  `87757c62e7be128ae50c7ce7192d74ae80ea789391acce004e3f6445ca7bcc8a`.
+- Separate protocol-schema downloads are still marked **Coming soon**.
+- Official runtime images are still marked **Registry pending**.
+- The public platform health response reports Full Evaluation disabled, not ready, and no Full
+  Evaluation worker available.
+- The rules still label the final score denominator, tie-breaker, timeouts, CPU/memory/storage,
+  concurrency, build-feedback budget, network/API policy, credential delivery, submission frequency,
+  rerun/cancellation rules, and feedback visibility as pending.
+
+The live pages are internally ahead of their schedule in two places: registration is active and the
+Development Cases are downloadable even though some timeline copy points to later milestones. Use
+the live portal and release index for current availability, but do not infer unpublished evaluation
+limits from pilot behavior.
+
+## Critical foundation-model gate
+
+The rules require an LLM to be the Agent's foundation model. Archimedes supports real local or remote
+OpenAI-compatible models, but its safe development default remains `mock`. The qualified `hello`
+Smoke Test can be solved deterministically and therefore does not demonstrate that a real model was
+available during organizer execution.
+
+Do **not** start Full Evaluation until the organizer publishes the network and credential mechanism
+and the exact immutable candidate has completed a real-model smoke run through that mechanism.
+Never put an API key, `.env` file, credential, or private endpoint secret inside
+`agents/archimedes` or an Agent ZIP.
+
+Record for the evaluated immutable version:
+
+- exact fast and strong model identifiers and versions;
+- provider and endpoint type;
+- organizer-approved credential-injection method;
+- network availability assumptions;
+- model-call, token, cost, timeout, repair-iteration, and build-request limits;
+- prompt strategy, retrieval sources, static tools, external data, and known nondeterminism.
+
+## Public Development Cases v0.1
+
+The public archive contains case metadata using `schema_version: buildbench.case.v0.1`, with
+architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.3`
+accepts this shape as well as the existing flat Starter Kit task shape.
+
+The development release excludes hidden labels, reference repairs, source-side success logs,
+organizer audit records, and previous run artifacts. Do not seek, reconstruct, or bundle those
+materials. Preserve upstream and distribution licenses when using or redistributing source packages.
+
+Static analysis of all 200 released failure logs produced a causal diagnostic and a recognized
+failure-family classification for every log. This is only ingestion/parser evidence. It must not be
+reported as Verified Build Success Rate because the organizer's target builds were not run.
+
+## Build and package a new candidate
+
+Use Linux or WSL2 with Docker Engine 24+ or Docker Desktop using Linux containers. From the Starter
+Kit root:
 
 ```bash
 ./bb version
 ./bb doctor
 ./bb demo
-./bb check --agent ./agents/archimedes
-./bb test --agent ./agents/archimedes
 ./bb ready --agent ./agents/archimedes --json
 ```
 
-Do not continue unless `ready` returns `"status": "succeeded"`, prints the current ZIP SHA-256,
-and creates `dist/agent-submission.zip`. Inspect the archive root:
+Do not claim readiness unless `ready` exits zero, returns `"status": "succeeded"`, creates
+`dist/agent-submission.zip`, and reports the same SHA-256 as the file.
+
+Inspect the exact archive:
 
 ```bash
 unzip -l dist/agent-submission.zip
 sha256sum dist/agent-submission.zip
 ```
 
-It must contain `agent.yaml`, `requirements.lock`, `README.md`, and `src/` at the ZIP root. It must
-not contain the Starter Kit, tests, development Cases, caches, logs, `.env`, credentials, prior
-patches, model weights, or run artifacts. Upload only the ZIP emitted by `bb`; do not manually zip
-the repository.
+Its root must contain only the allowed shallow Agent bundle:
 
-## Upload and qualify
+```text
+agent.yaml
+requirements.lock
+README.md
+src/
+```
 
-1. Open **My Submissions** on the Build-Bench website.
-2. Choose **Make new submission**.
-3. Upload `dist/agent-submission.zip`, not this repository and not the Starter Kit.
-4. Record the immutable Agent-version identifier and verify its platform digest against the local
-   SHA-256.
-5. Wait for static checking and run the Hosted Smoke Test.
-6. Review entrypoint, dependency, permission, workspace, result-schema, build-feedback, and model
-   diagnostics. Any change requires a new immutable upload.
-7. Once a version qualifies, explicitly select that version and choose **Start evaluation** for a
-   public Full Evaluation. Uploading alone does not start evaluation.
-8. Before 13 November, explicitly freeze the final qualified version for hidden evaluation.
+It must not contain the Starter Kit, tests, Development Cases, caches, logs, `.env`, credentials,
+prior patches, model weights, symlinks, virtual environments, or run artifacts. Upload only the ZIP
+emitted by `bb`; never manually zip the repository.
 
-The Agent ZIP is uploaded through Build-Bench **My Submissions**. The ICSE Competition Track
-HotCRP site is for competition proposals and any separately requested solution paper or organizer
-report; it is not the Agent-bundle upload target.
+Run the stricter development audit as an additional check:
 
-## Retain reproducibility evidence
+```bash
+python dev/submission_preflight.py --json
+```
 
-Keep the submitted ZIP, SHA-256, source commit, lockfile, exact configuration, model/provider
-identifiers, prompt files, disclosure text, local `bb ready` JSON, Hosted Smoke Test result, and
-permitted platform diagnostics. The organizers may request clarification or a reproducibility
-demonstration, and any public system description must correspond to the evaluated immutable version.
+Manual attestations in that command record external facts; they do not bypass an organizer check.
 
-## Current local blockers
+## Upload, qualify, and evaluate
 
-At the time this checklist was written:
+1. Open **My Submissions** and upload `dist/agent-submission.zip` as a new immutable version.
+2. Confirm the complete platform digest against the local SHA-256.
+3. Wait for static checks, then run or await the Hosted Smoke Test as directed by the portal.
+4. Review the retained entrypoint, dependency, workspace, result-schema, canonical-patch, permission,
+   and build diagnostics.
+5. Treat any change as a new version and repeat packaging, digest comparison, and qualification.
+6. Start Full Evaluation only when the portal reports it enabled, the frozen operational policy is
+   published, real-model delivery is proven, and the Team intentionally chooses to spend its allowed
+   evaluation attempt.
+7. Before the final-selection deadline, explicitly select the qualified immutable version intended
+   for hidden evaluation. A later upload does not modify an active or completed evaluation snapshot.
 
-- `buildbench-validator-runtime:v0` and `buildbench-example-assets:v0` were not accessible from the
-  configured Docker registry, so the full official `bb ready` workflow could not finish locally;
-- final network, credential injection, build-feedback schema, and resource budgets were still
-  pending the organizer's protocol freeze;
-- no organizer-approved real foundation-model configuration had been injected into the managed
-  runtime.
+## Reproducibility record
 
-The rc.2 local Runner uses `--network none` and does not forward `ARCHIMEDES_*` variables. A host
-Ollama smoke therefore validates the adapter but does not satisfy the separate
-`competition_model_access` gate.
+Retain the submitted ZIP, complete SHA-256, source commit, lockfile, manifest, exact model/provider
+configuration, prompt and disclosure text, local `bb ready` JSON, Hosted Smoke log, platform
+submission ID, platform digest, Full Evaluation ID, and permitted evaluation diagnostics.
 
-These are release/infrastructure blockers, not reasons to bypass `bb ready` or submit the current
-provisional archive as final.
+The required final method disclosure covers model/provider/version, prompt and repair-loop design,
+retrieval and static tools, training or fine-tuning, external datasets or knowledge bases,
+third-party services, nondeterminism, caching, dependencies, and reproducibility constraints.
+
+## Items requiring participant attention
+
+- Keep the qualified `0.2.2` archive and submission ID immutable and backed up.
+- Compare its full platform SHA-256 with the retained local digest.
+- Do not start Full Evaluation while the platform reports it disabled or before model/network policy
+  and resource limits are published.
+- Confirm the organizer-supported real LLM configuration before evaluating; `mock` is development
+  only and does not satisfy the competition foundation-model rule.
+- Re-check the CSTCloud Rules, Timeline, FAQ, and Data & Downloads pages immediately before every new
+  upload or Full Evaluation request because material operational parameters are still pending.
+- Use `buildbench-challenge@googlegroups.com` for rule or infrastructure clarification.

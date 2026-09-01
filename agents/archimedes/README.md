@@ -16,6 +16,23 @@ official protocol default is `/workspace`. `python -m src.main` runs exactly one
 The checked-in manifest and result writer use the kit's schema/protocol `0.1`. The manifest contains
 no undocumented keys. The agent bundle uses only Python 3.11 standard-library modules.
 
+### Public Development Cases v0.1
+
+The organizer released 200 public Ubuntu Launchpad cases on 26 August 2026: 100
+`x86_64-to-aarch64` and 100 `aarch64-to-x86_64`. Archimedes accepts the released
+`buildbench.case.v0.1` metadata shape, including architectures nested under `platform` and failure
+logs selected through `task.initial_failure_evidence` or `paths.target_failure_log`. It retains
+support for the flat protocol `0.1` task shape used by the Starter Kit and Hosted Smoke Test.
+When a runner-generated task omits architecture fields, the loader can recover only the documented
+identity fields from a schema-validated worktree-root `case.json`; input metadata remains
+authoritative and is never replaced.
+
+The public development archive is development evidence, not part of the submitted Agent. It must
+not be bundled into `agent-submission.zip`, and its source-package licensing and attribution terms
+continue to apply. A 1 September 2026 audit of all 200 released failure logs found a non-empty
+causal diagnostic and deterministic failure-family classification for every log; that is parser
+coverage, not verified repair or build success.
+
 ## System architecture
 
 The runtime is separated into small typed packages:
@@ -199,11 +216,14 @@ records commit, UTC timestamp, seed, model identifier, feature configuration, an
 
 Important current limitations:
 
-- The merged official Starter Kit is `0.1.0-rc.2`; later releases may require adapter updates.
-- The official network/API-key injection policy, final runtime budgets, resource limits, and build-feedback
-  request/response contract remain unknown and are represented through configuration/adapters.
+- The latest published Starter Kit remains `0.1.0-rc.2`. The public Development Cases are `v0.1`,
+  while separate protocol-schema and runtime-image releases remain unpublished.
+- As of the 1 September 2026 CSTCloud audit, Full Evaluation is disabled and the official
+  network/API-key injection policy, final runtime budgets, resource limits, score denominator,
+  rerun limits, and credential mechanism remain unpublished.
 - `BbBuildFeedbackProvider` intentionally remains unavailable. Host compiler results are never
-  treated as official target-build truth.
+  treated as official target-build truth because the participant documentation still calls hosted
+  build feedback a planned later-protocol feature.
 - Deterministic planners cover uniquely evidenced compiler-feature checks, guarded x86 flags,
   portable source selection, atomic linkage, RPM architecture conditions, artifact paths,
   generated-configuration markers, byte serialization, pointer-width assumptions, and synchronized
