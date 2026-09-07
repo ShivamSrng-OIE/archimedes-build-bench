@@ -12,7 +12,7 @@ _SIGNALS: tuple[tuple[FailureFamily, tuple[str, ...]], ...] = (
     (FailureFamily.CONFIGURATION, (r"configure: error", r"cmake error", r"unknown architecture", r"unsupported target", r"error:\s*invalid command")),
     (FailureFamily.LINKING, (r"undefined reference", r"undefined symbol", r"cannot find -l", r"(?:^|/)ld(?:\.\w+)?: ", r"linker command failed", r"\bBFD\b.*assertion fail", r"relocation .*can not be used", r"GCS is required by -z gcs")),
     (FailureFamily.PACKAGING, (r"rpmbuild", r"debuild", r"packaging", r"package manifest", r"%files", r"dpkg-(?:deb|gencontrol|gensymbols): error", r"(?:cannot|can't) (?:access|stat).*debian/", r"cannot find \(any matches for\)", r"failed to remove .*debian/")),
-    (FailureFamily.TEST, (r"tests? failed", r"assertion(?:error| failed)", r"pytest", r"ctest", r"^FAIL(?:ED)?:", r"Failed test", r"illegal instruction", r"segmentation fault", r"differ: byte")),
+    (FailureFamily.TEST, (r"tests? failed", r"assertion(?:error| failed)", r"pytest", r"ctest", r"^FAIL(?:ED)?:", r"Failed test", r"(?:found issues in|test failure|failed unexpectedly)", r"illegal instruction", r"segmentation fault", r"differ: byte")),
     (FailureFamily.ARTIFACT, (r"expected artifact", r"artifact.*missing", r"validation failed")),
     (FailureFamily.COMPILATION, (r"fatal error:", r"error:", r"unrecognized command-line option", r"bad value .*?-march", r"intrinsic", r"assembler messages", r"reference .*not found in the current environment", r"inconsistent assumptions over library")),
     (FailureFamily.BUILD_PREPARATION, (r"patch failed", r"cannot unpack", r"source.*missing")),

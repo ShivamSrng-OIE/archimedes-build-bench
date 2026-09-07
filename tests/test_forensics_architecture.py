@@ -114,6 +114,45 @@ class ForensicsArchitectureTests(unittest.TestCase):
         self.assertIn("Assertion `last_ref' failed", analysis.primary_diagnostic)
         self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
 
+    def test_release_log_ignores_autoconf_compiler_version_probes(self) -> None:
+        analysis = analyze_build_log(
+            "gcc: error: unrecognized command-line option '-V'\n"
+            "gcc: fatal error: no input files\n"
+            "gcc: error: unrecognized command-line option '-qversion'; did you mean '--version'?\n"
+            "gcc: fatal error: no input files\n"
+            "gcc: error: unrecognized command-line option '-fno-cf-protection'; did you mean "
+            "'-fcf-protection'?\n"
+            "configure: error: C compiler cannot create executables\n"
+        )
+        self.assertIn("-fno-cf-protection", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.COMPILE)
+
+    def test_release_log_ignores_autoconf_conftest_failures(self) -> None:
+        analysis = analyze_build_log(
+            "| conftest.c:49:10: fatal error: minix/config.h: No such file or directory\n"
+            "| conftest.c:72:6: warning: conflicting types for built-in function 'memchr'\n"
+            "conftest.c:105:14: error: too few arguments to function 'strerror_r'\n"
+            "| gcc: error: unrecognized command-line option '-fdebug-macro'\n"
+            "| configure: failed program was:\n"
+            "FAIL: run-debugedit-self-test\n"
+            "AssertionError: generated debug sections differ\n"
+        )
+        self.assertEqual(
+            analysis.primary_diagnostic,
+            "AssertionError: generated debug sections differ",
+        )
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
+    def test_release_log_prefers_specific_test_issue_over_failure_summary(self) -> None:
+        analysis = analyze_build_log(
+            "ERROR: All 58 tests were run, 5 failed unexpectedly.\n"
+            "Failed tests:\n"
+            "ERROR: eu-elflint found issues in tests/testsuite.dir/54/subdir_build/bar\n"
+            "make: *** [check] Error 1\n"
+        )
+        self.assertIn("eu-elflint found issues", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
     def test_primary_file_normalizes_launchpad_build_paths(self) -> None:
         self.assertEqual(
             identify_primary_file(

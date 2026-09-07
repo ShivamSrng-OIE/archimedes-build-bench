@@ -59,6 +59,8 @@ _PATTERNS = (
     DiagnosticPattern(re.compile(r"(?:cannot find \(any matches for\)|failed to remove .*no such file)", re.I), 95),
     DiagnosticPattern(re.compile(r"(?:ModuleNotFoundError|ImportError|FileNotFoundError|AttributeError|AssertionError):", re.I), 95),
     DiagnosticPattern(re.compile(r"(?:assertion [`'][^`']+[`'] failed|assertion failed:|child killed by signal)", re.I), 95),
+    DiagnosticPattern(re.compile(r"(?:^|\s).*found issues in", re.I), 97),
+    DiagnosticPattern(re.compile(r"(?:^|\s).*(?:test failure|failed unexpectedly)", re.I), 90),
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol).*(?:atomic|__atomic|__sync)", re.I), 94),
     DiagnosticPattern(re.compile(r"dpkg-gensymbols: error:.*(?:disappeared|symbols file)", re.I), 93),
     DiagnosticPattern(re.compile(r"dpkg-(?:deb|gencontrol): error:", re.I), 93),
@@ -85,6 +87,19 @@ _NON_CAUSAL = (
     re.compile(r"(?:libtool: link: warning: undefined symbols|configure: WARNING:)", re.I),
     re.compile(r"expected error:", re.I),
     re.compile(r":\s*note:.*may have been intended to silence earlier diagnostics", re.I),
+    re.compile(
+        r"^(?:\|\s*)?[-A-Za-z0-9_+.]+:\s+error:\s+unrecognized command-line "
+        r"option\s+['\"â€˜â€™]-(?:V|qversion|version)['\"â€˜â€™]",
+        re.I,
+    ),
+    re.compile(r"^(?:\|\s*)?[-A-Za-z0-9_+.]+:\s+fatal error:\s+no input files\s*$", re.I),
+    re.compile(r"^(?:\|\s*)?conftest\.[A-Za-z0-9]+:\d+(?::\d+)?:\s+(?:fatal\s+)?error:", re.I),
+    re.compile(r"^\|\s*conftest\.[A-Za-z0-9]+:\d+(?::\d+)?:\s+warning:", re.I),
+    re.compile(r"^\|\s*configure:\s+failed program was:", re.I),
+    re.compile(
+        r"^\|\s*[-A-Za-z0-9_+.]+:\s+(?:fatal\s+|internal compiler\s+)?error:",
+        re.I,
+    ),
     # Released Launchpad logs include complete environment/package inventories and echoed
     # compiler/Cargo commands. Words such as "error" can occur inside their metadata and
     # must not outrank the later diagnostic emitted by the command.
