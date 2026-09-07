@@ -102,6 +102,12 @@ assignment, removed exactly the three rejected x86-only flags (`-msse`, `-msse2`
 `-mfpmath=sse`), preserved the remaining portable flags, and left generated `configure` untouched.
 This is also candidate-selection evidence rather than a verified target-build success.
 
+The resulting v0.2.9 candidate at commit `291081f` passes 100 tests plus 20 subtests, Ruff, strict
+mypy over 73 source files, bytecode compilation, and the official static Agent check. Two official
+package runs produced the same 90,304-byte ZIP with SHA-256
+`6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668`. It is not yet qualified;
+qualified v0.2.8 remains the portal fallback.
+
 An organizer announcement published by Nankai University on 27 August states that formal ranking is
 planned over 1,016 hidden Cases spanning all six migration directions. It also names Meituan as a
 model-API supporter. The participant rules still do not publish the corresponding endpoint,

@@ -54,6 +54,24 @@ requires a new version and immutable upload. Do not attribute later local change
 Local development now targets `0.2.9`. It is a separate candidate until its own immutable upload
 and Hosted Smoke Test complete; qualified `0.2.8` remains the fallback in the portal.
 
+Prepared v0.2.9 candidate:
+
+```text
+Source commit:  291081f
+Archive:        dist/agent-submission.zip
+Archive bytes:  90,304
+SHA-256:        6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668
+Static check:   passed (79 files; standard-library-only dependency lock)
+Test suite:     100 passed, 20 subtests passed
+Quality gates:  Ruff passed; strict mypy passed for 73 source files; compileall passed
+Reproducibility: two consecutive official package runs produced the same SHA-256
+```
+
+The official local `bb ready` orchestration is still blocked before testing by the unpublished
+`buildbench-validator-runtime:v0` and `buildbench-example-assets:v0` images. This is an organizer
+asset-availability limitation, not a substitute for qualification; v0.2.9 still requires its own
+Hosted Smoke Test before it can be selected.
+
 ## Current platform and release state
 
 At the audit time:
