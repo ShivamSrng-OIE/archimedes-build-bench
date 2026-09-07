@@ -25,8 +25,8 @@ The following organizer-run qualification evidence was reported from the CSTClou
 
 ```text
 Agent:          archimedes
-Agent version:  0.2.2
-Submission ID:  20260901T004910Z-0a48b255
+Agent version:  0.2.8
+Submission ID:  20260907T040030Z-2c652819
 Status:         Qualified
 Hosted Smoke:   hello succeeded (1/1)
 Validation:     static check, Agent execution, canonical patch, and final build all succeeded
@@ -35,21 +35,21 @@ Validation:     static check, Agent execution, canonical patch, and final build 
 The locally retained archive is:
 
 ```text
-dist/agent-submission-archimedes-v0.2.2-20260901T004910Z-0a48b255.zip
-SHA-256: 96123cf3af5e153663ce47ac45763a994917453defcce8d2a8dd937c760c1a63
+dist/agent-submission.zip
+SHA-256: da9a37379fb6e92022c8f0e9e21c7228af6d4a358238cfaf519687baa584dd79
 ```
 
-The portal digest still needs to be compared with this complete local digest. A matching Agent name
-and version alone do not prove byte identity.
+The complete local digest was recomputed immediately before browser upload, and the portal displays
+the matching prefix `da9a37379fb6…` for the immutable version.
 
 Qualification proves that this immutable bundle satisfies the current static package checks and the
 Hosted Smoke Test contract. It does **not** prove repair performance on the public Development Cases,
 compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
 evaluation.
 
-Source development now targets Archimedes `0.2.8`. Any source, manifest, dependency, or configuration
-change after the qualified `0.2.2` upload requires a new immutable upload. Never describe local
-`0.2.8` results as results of submission `20260901T004910Z-0a48b255`.
+Any source, manifest, dependency, or configuration change after this qualified `0.2.8` upload
+requires a new version and immutable upload. Do not attribute later local changes to submission
+`20260907T040030Z-2c652819`.
 
 ## Current platform and release state
 
