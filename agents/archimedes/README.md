@@ -18,7 +18,8 @@ no undocumented keys. The agent bundle uses only Python 3.11 standard-library mo
 
 ### Public Development Cases v0.1
 
-The organizer released 200 public Ubuntu Launchpad cases on 26 August 2026: 100
+The organizer regenerated the 200 public Ubuntu Launchpad cases for the 7 September 2026 public
+phase: 100
 `x86_64-to-aarch64` and 100 `aarch64-to-x86_64`. Archimedes accepts the released
 `buildbench.case.v0.1` metadata shape, including architectures nested under `platform` and failure
 logs selected through `task.initial_failure_evidence` or `paths.target_failure_log`. It retains
@@ -29,9 +30,19 @@ authoritative and is never replaced.
 
 The public development archive is development evidence, not part of the submitted Agent. It must
 not be bundled into `agent-submission.zip`, and its source-package licensing and attribution terms
-continue to apply. A 1 September 2026 audit of all 200 released failure logs found a non-empty
-causal diagnostic and deterministic failure-family classification for every log; that is parser
-coverage, not verified repair or build success.
+continue to apply. The current archive was generated at `2026-09-07T01:22:06Z` and has SHA-256
+`94372a28dbd81ece8f5007b83ec4b4ff1b0590de43a528be4461ae7f2bbd675d`. It replaced an earlier
+archive under the same `v0.1` label, so the digest—not the label alone—is the release identity.
+All 1,510 checksummed members were verified directly from the ZIP. Five Debian epoch filenames use
+colons and therefore require Linux extraction rather than a Windows filesystem.
+
+A 7 September audit of all 200 current failure logs found a non-empty diagnostic and deterministic
+failure-family classification for every log. Ten logs exceed the two-megabyte context budget, so
+the loader now keeps bounded head and tail evidence instead of discarding the terminal failure.
+Forensics suppresses zero-error summaries and wrapper cascades, recognizes released Debian/linker/
+test diagnostics, and extracts a causal repository path when present. Model context includes the
+causal log window and prioritized Debian packaging files. This is parser/context coverage, not
+verified repair or build success.
 
 ## System architecture
 
@@ -218,7 +229,7 @@ Important current limitations:
 
 - The latest published Starter Kit remains `0.1.0-rc.2`. The public Development Cases are `v0.1`,
   while separate protocol-schema and runtime-image releases remain unpublished.
-- As of the 1 September 2026 CSTCloud audit, Full Evaluation is disabled and the official
+- As of the 7 September 2026 CSTCloud audit, Full Evaluation is disabled and the official
   network/API-key injection policy, final runtime budgets, resource limits, score denominator,
   rerun limits, and credential mechanism remain unpublished.
 - `BbBuildFeedbackProvider` intentionally remains unavailable. Host compiler results are never
@@ -226,8 +237,9 @@ Important current limitations:
   build feedback a planned later-protocol feature.
 - Deterministic planners cover uniquely evidenced compiler-feature checks, guarded x86 flags,
   portable source selection, atomic linkage, RPM architecture conditions, artifact paths,
-  generated-configuration markers, byte serialization, pointer-width assumptions, and synchronized
-  feature dispatch. Novel semantics or ambiguous source transformations still require model evidence
+  generated-configuration markers, byte serialization, pointer-width assumptions, synchronized
+  feature dispatch, and uniquely observed hard-coded Debian multiarch paths.
+  Novel semantics or ambiguous source transformations still require model evidence
   or return `no_safe_fix` rather than guessing.
 - QEMU is only a discovered capability; no emulator result is treated as definitive hardware,
   kernel, atomic, or memory-model evidence.

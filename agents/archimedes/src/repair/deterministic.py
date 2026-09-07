@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..schemas import CaseData, FailureAnalysis, PlannedEdit, RepairFamily
+from ..schemas import Architecture, CaseData, FailureAnalysis, PlannedEdit, RepairFamily
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +46,52 @@ def _edit(path: str, expected: str, replacement: str, rationale: str) -> Planned
         expected_text=expected,
         replacement=replacement,
         rationale=rationale,
+    )
+
+
+def _debian_multiarch_path(
+    files: list[tuple[str, str]], log: str, case: CaseData
+) -> DeterministicMatch | None:
+    """Replace one proven source-architecture GNU path in Debian packaging."""
+    triplets = {
+        Architecture.X86_64: "x86_64-linux-gnu",
+        Architecture.AARCH64: "aarch64-linux-gnu",
+    }
+    source_triplet = triplets.get(case.source_architecture.canonical)
+    target_triplet = triplets.get(case.target_architecture.canonical)
+    if not source_triplet or not target_triplet or source_triplet == target_triplet:
+        return None
+    missing_path = re.search(
+        rf"(?:cannot|can't) (?:access|stat).*{re.escape(source_triplet)}.*"
+        r"(?:no such file|not found)",
+        log,
+        re.I,
+    )
+    if missing_path is None:
+        return None
+    matches: list[tuple[str, str]] = []
+    for path, text in files:
+        if path != "debian/rules":
+            continue
+        for line in text.splitlines():
+            if source_triplet in line:
+                matches.append((path, line))
+    if len(matches) != 1:
+        return None
+    path, expected = matches[0]
+    replacement = expected.replace(
+        source_triplet, "$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)"
+    )
+    rationale = (
+        "derive the Debian multiarch directory from the target build architecture instead of "
+        f"hard-coding the source architecture triplet {source_triplet}"
+    )
+    return DeterministicMatch(
+        RepairFamily.PACKAGING_RULE,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.97,
+        risk=0.03,
     )
 
 
@@ -418,9 +464,11 @@ def match_deterministic_repair(
     case: CaseData, failure: FailureAnalysis, repo: Path
 ) -> DeterministicMatch | None:
     """Return the first uniquely evidenced generic repair rule, never using case IDs."""
-    del case
     files = _text_files(repo)
     log = failure.normalized_log
+    multiarch = _debian_multiarch_path(files, log, case)
+    if multiarch is not None:
+        return multiarch
     matchers = (
         _unconditional_build_abort,
         _cmake_feature_check,

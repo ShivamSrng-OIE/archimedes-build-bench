@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.constants import MAX_LOG_CHARACTERS
 from src.schemas import Architecture
 from src.workspace.case_loader import load_case
 from src.workspace.paths import WorkspacePaths
@@ -74,6 +75,28 @@ class CaseLoaderTests(unittest.TestCase):
             case = load_case(paths)
 
             self.assertEqual(case.build_log, "")
+
+    def test_oversized_log_preserves_terminal_failure_without_loading_middle(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            paths = self._workspace(root)
+            (paths.input / "case.json").write_text(
+                json.dumps({"paths": {"target_failure_log": "target-failure.log"}}),
+                encoding="utf-8",
+            )
+            (paths.input / "target-failure.log").write_text(
+                "setup evidence\n"
+                + ("uninteresting output\n" * (MAX_LOG_CHARACTERS // 10))
+                + "src/port.c:77: error: unsupported target architecture\n",
+                encoding="utf-8",
+            )
+
+            case = load_case(paths)
+
+            self.assertIn("setup evidence", case.build_log)
+            self.assertIn("middle of oversized build log omitted", case.build_log)
+            self.assertIn("unsupported target architecture", case.build_log)
+            self.assertLessEqual(len(case.build_log), MAX_LOG_CHARACTERS + 100)
 
     def test_recovers_released_identity_when_runner_task_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as name:

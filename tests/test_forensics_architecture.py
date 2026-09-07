@@ -12,7 +12,7 @@ from src.architecture.hazard_scanner import ArchitectureHazard
 from src.architecture.semantic_anchor import extract_anchor, validate_anchor
 from src.forensics.error_signature import normalize_error_signature
 from src.forensics.frontier import FrontierMovement, compare_frontiers
-from src.forensics.log_parser import analyze_build_log, normalize_log
+from src.forensics.log_parser import analyze_build_log, identify_primary_file, normalize_log
 from src.schemas import Architecture, FailureFrontier, FrontierStage, SemanticAnchor
 
 
@@ -37,6 +37,78 @@ class ForensicsArchitectureTests(unittest.TestCase):
         analysis = analyze_build_log(raw)
         self.assertIn("-msse4.2", analysis.primary_diagnostic)
         self.assertEqual(analysis.frontier.stage, FrontierStage.COMPILE)
+
+    def test_release_log_ignores_zero_error_summary_and_selects_failed_test(self) -> None:
+        raw = (
+            "# ERROR: 0\n"
+            "FAIL: tests/swig_perl\n"
+            "# Failed test 'Adding mer to hash'\n"
+            "dh_auto_test: error: make -j4 check returned exit code 2\n"
+        )
+        analysis = analyze_build_log(raw)
+        self.assertEqual(analysis.primary_diagnostic, "FAIL: tests/swig_perl")
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
+    def test_release_log_prefers_specific_packaging_path_over_dpkg_wrapper(self) -> None:
+        raw = (
+            "chmod: cannot access 'debian/node-re2/usr/lib/x86_64-linux-gnu/nodejs/tool.js': "
+            "No such file or directory\n"
+            "make[1]: *** [debian/rules:25: override_dh_fixperms] Error 1\n"
+            "dpkg-buildpackage: error: debian/rules binary-arch subprocess returned exit status 2\n"
+        )
+        analysis = analyze_build_log(raw)
+        self.assertTrue(analysis.primary_diagnostic.startswith("chmod: cannot access"))
+        self.assertEqual(analysis.frontier.stage, FrontierStage.PACKAGE)
+        self.assertEqual(analysis.frontier.primary_file, "debian/node-re2/usr/lib/x86_64-linux-gnu/nodejs/tool.js")
+
+    def test_release_log_ignores_latex_warning_before_test_assertion(self) -> None:
+        raw = (
+            "LaTeX Warning: There were undefined references.\n"
+            "FAIL: test_blastn (test_NCBI_BLAST_tools.Pairwise)\n"
+            "AssertionError: 132 != 0 : Got error code 132 back\n"
+        )
+        analysis = analyze_build_log(raw)
+        self.assertEqual(analysis.primary_diagnostic, "AssertionError: 132 != 0 : Got error code 132 back")
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
+    def test_primary_file_normalizes_launchpad_build_paths(self) -> None:
+        self.assertEqual(
+            identify_primary_file(
+                "/<<PKGBUILDDIR>>/setup.py:33: SyntaxWarning",
+                "python3 setup.py build_sphinx",
+            ),
+            "setup.py",
+        )
+        self.assertEqual(
+            identify_primary_file("make[1]: *** [debian/rules:28: override_dh_installdocs] Error 1"),
+            "debian/rules",
+        )
+
+    def test_release_log_classifies_inactivity_kill_as_environment(self) -> None:
+        analysis = analyze_build_log(
+            "E: Build killed with signal TERM after 150 minutes of inactivity\n"
+            "E: Build failure (dpkg-buildpackage died)\n"
+        )
+        self.assertIn("150 minutes of inactivity", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.ENVIRONMENT)
+
+    def test_release_log_prefers_specific_missing_packaging_input(self) -> None:
+        analysis = analyze_build_log(
+            'dh_installdocs: Cannot find (any matches for) "debian/tests/run-tests" '
+            "(tried in ., debian/tmp)\n"
+            "dpkg-buildpackage: error: fakeroot debian/rules binary subprocess returned exit status 2\n"
+        )
+        self.assertIn("Cannot find (any matches for)", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.PACKAGE)
+
+    def test_release_log_treats_target_binary_crash_as_test_failure(self) -> None:
+        analysis = analyze_build_log(
+            "LD_LIBRARY_PATH=. ./tests/convolution.test\n"
+            "Segmentation fault (core dumped)\n"
+            "dh_auto_test: error: make -j4 test returned exit code 2\n"
+        )
+        self.assertTrue(analysis.primary_diagnostic.startswith("Segmentation fault"))
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
 
     def test_error_signature_removes_unstable_material(self) -> None:
         first = "C:/Temp/a123/file.c:42:9: error: bad value '-march=x86-64-v3'"

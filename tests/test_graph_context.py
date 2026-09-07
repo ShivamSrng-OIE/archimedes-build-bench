@@ -30,6 +30,15 @@ class GraphContextTests(unittest.TestCase):
             self.assertIn("Makefile", inventory.build_files)
             self.assertEqual(find_portable_fallbacks(repo)[0].path, "src/generic.c")
 
+    def test_debian_rules_are_build_and_packaging_context(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            (repo / "debian").mkdir()
+            (repo / "debian" / "rules").write_text("#!/usr/bin/make -f\n", encoding="utf-8")
+            inventory = inventory_repository(repo)
+            self.assertIn("debian/rules", inventory.build_files)
+            self.assertIn("debian/rules", inventory.packaging_files)
+
     def test_delta_graph_traces_matching_hazard(self) -> None:
         identity = ArchitectureIdentity(Architecture.AARCH64, "aarch64", ["aarch64"])
         source = ArchitectureIdentity(Architecture.X86_64, "x86_64", ["x86_64"])

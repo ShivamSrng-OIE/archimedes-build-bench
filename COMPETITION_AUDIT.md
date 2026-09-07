@@ -1,4 +1,4 @@
-# Build-Bench CSTCloud compliance audit - 2026-09-01
+# Build-Bench CSTCloud compliance audit - 2026-09-07
 
 ## Scope and authority
 
@@ -21,14 +21,14 @@ the participant supplied for their own version.
 | `task.html` | Read Case evidence, autonomously modify only the permitted worktree, write structured completion output; no patch-similarity scoring. | Workspace boundary, result writer, guarded edits, and clean-worktree assumptions implemented. |
 | `submission.html` | Shallow managed-Python 3.11 ZIP using manifest/protocol `0.1`; non-interactive entrypoint; exact dependency pins; no secrets or runtime artifacts. | Hosted static check passed for v0.2.2. Manifest remains protocol `0.1`; standard-library-only lockfile remains valid. |
 | `rules.html` | LLM foundation model; no Case-specific answers, hidden material, build bypass, sandbox/evaluator access, or undeclared intervention; reproducibility disclosure required. | Case-specific example path was previously removed; path/policy critics and disclosure exist. Real-model delivery remains unresolved and is a Full Evaluation blocker. |
-| `timeline.html` | Protocol freeze scheduled for 31 August; public phase scheduled for 7 September; final Agent selection 13 November; results by 20 November. | Dates recorded, but the live rules still contain pending parameters after the scheduled freeze. Recheck before evaluation. |
+| `timeline.html` | Public development and validation are listed as open on 7 September; final Agent selection is 13 November; results are due by 20 November. | Public resources were refreshed, but the live rules still contain pending parameters after the scheduled freeze. Recheck before evaluation. |
 | `faq.html` | No custom Docker in rc.2; no current `bb-build`; no secrets; Smoke Test is qualification only; separate versioned Case sets. | Managed runtime retained; `BbBuildFeedbackProvider` remains fail-closed; qualification is not represented as an official score. |
-| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 and dataset card released; protocol schemas and runtime images pending. | Starter Kit version matches. Development schema support added in v0.2.3. No dataset content is bundled. |
+| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.4. No dataset content is bundled. |
 | `register.html` | Captain account, accurate 1-5 member roster, unique Team name, optional unique institutional email, acceptance of rules. | Team registration is proven indirectly by the participant's authenticated qualified submission; roster accuracy remains a participant responsibility. |
 | `login.html` | Captain signs in to manage Team and submissions. | No codebase impact. Credentials are never stored in the repository. |
 | `team.html` | Team name is public leaderboard identity; registration/roster is maintained in the portal. | Participant action only; no Agent-bundle impact. |
-| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.2 is qualified under submission `20260901T004910Z-0a48b255`; source changes are versioned as v0.2.3. |
-| `evaluation-detail.html` | Evaluation advances through queued, preparing, evaluating, finalizing, completed; score appears only after finalization. | No evaluation exists yet; platform health reports Full Evaluation disabled. |
+| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.2 is qualified under submission `20260901T004910Z-0a48b255`; current source changes are versioned as v0.2.4. |
+| `evaluation-detail.html` | Evaluation advances through queued, preparing, evaluating, finalizing, completed; score appears only after finalization. | No Full Evaluation is documented for this candidate; current platform health reports Full Evaluation disabled. |
 | `leaderboard.html` | Hosted Smoke Tests do not affect ranking; only compatible organizer-published Full Evaluations are compared; Build Success Rate is primary. | No score claim is made from the 1/1 Smoke Test or public-log parser audit. |
 | `contact.html` | Official support email is `buildbench-challenge@googlegroups.com`. | Recorded in the submission checklist for unresolved policy questions. |
 
@@ -45,17 +45,22 @@ protocol migration is currently justified.
 
 ### Development Cases v0.1
 
-- Generated: `2026-08-26T13:41:21Z`
+- Generated: `2026-09-07T01:22:06Z`
 - Cases: 200
 - Directions: 100 `aarch64-to-x86_64`, 100 `x86_64-to-aarch64`
 - Ecosystem: Ubuntu Launchpad Debian source packages
-- Archive bytes: 222,919,804
-- Archive SHA-256: `87757c62e7be128ae50c7ce7192d74ae80ea789391acce004e3f6445ca7bcc8a`
+- Archive bytes: 222,919,777
+- Archive SHA-256: `94372a28dbd81ece8f5007b83ec4b4ff1b0590de43a528be4461ae7f2bbd675d`
 - Case schema: `buildbench.case.v0.1`
 
-The archive checksum was verified locally. Its metadata places architecture fields under `platform`
+The outer archive checksum and all 1,510 internal checksummed members were verified locally. This
+archive supersedes the 26 August bytes under the same `v0.1` label, so the digest is required for
+unambiguous provenance. Five members contain Debian epoch colons and cannot be materialized on
+NTFS; direct ZIP verification passed and full extraction requires a Linux filesystem.
+
+Its metadata places architecture fields under `platform`
 and identifies the target log through `task.initial_failure_evidence` and
-`paths.target_failure_log`. Archimedes v0.2.3 now accepts those fields without weakening path
+`paths.target_failure_log`. Archimedes accepts those fields without weakening path
 containment. It also has a schema-validated fallback for the public runner shape: when generated
 input metadata lacks architecture fields, only the documented case ID and architecture identity
 are recovered from the worktree-root `case.json`; that file cannot replace input policy metadata.
@@ -64,16 +69,27 @@ All 200 released target-failure logs were processed through Archimedes' determin
 
 | Failure family | Logs |
 |---|---:|
-| Compilation | 108 |
-| Linking | 69 |
-| Configuration | 11 |
-| Build preparation | 5 |
-| Test | 4 |
-| Environment | 2 |
-| Dependency | 1 |
+| Compilation | 77 |
+| Test | 36 |
+| Packaging | 29 |
+| Linking | 26 |
+| Configuration | 12 |
+| Dependency | 8 |
+| Environment | 6 |
+| Build preparation | 4 |
+| Artifact | 2 |
 
-Every log produced a non-empty primary diagnostic and a recognized family. This is parser coverage
-only; it is not a repair-success result and cannot be compared with Verified Build Success Rate.
+Every log produced a non-empty primary diagnostic and a recognized family after suppressing benign
+zero summaries and generic cascades. Ten logs exceed two megabytes; bounded head-plus-tail loading
+kept their terminal failures. Ninety-two logs yielded a repository-path candidate for guarded
+context lookup. These are parser/context coverage results only and cannot be compared with Verified
+Build Success Rate.
+
+An actual-source replay of released case `node-re2` selected the generic Debian multiarch repair,
+replacing one hard-coded source triplet in `debian/rules` with the target value obtained from
+`dpkg-architecture`. The edit passed the Agent's confidence, portability, policy, and atomic-edit
+gates. No organizer-equivalent target build was available, so this is candidate-selection evidence,
+not a verified repair success.
 
 An organizer announcement published by Nankai University on 27 August states that formal ranking is
 planned over 1,016 hidden Cases spanning all six migration directions. It also names Meituan as a
@@ -107,7 +123,8 @@ explicit participant check.
 
 1. The operational registration/submission portal is now CSTCloud, not GitHub Pages.
 2. Registration is active and the participant has a qualified immutable upload.
-3. Development Cases v0.1 are released and checksum-verifiable.
+3. Development Cases v0.1 were silently regenerated under the same label; the 7 September digest
+   and all internal checksums are verified.
 4. The released development metadata shape adds nested `platform`, `task`, and `paths` fields that
    were not handled by the old Agent loader.
 5. Full Evaluation is not merely awaiting a participant click: the public platform health response
@@ -141,4 +158,4 @@ update.
    organizer-compatible real-model smoke run.
 3. Wait for Full Evaluation readiness and frozen operational limits.
 4. Decide whether to preserve qualified v0.2.2 for the first Full Evaluation or upload and qualify
-   v0.2.3 after the released-schema compatibility change and full readiness checks.
+   v0.2.4 after the dataset-informed changes and full readiness checks.

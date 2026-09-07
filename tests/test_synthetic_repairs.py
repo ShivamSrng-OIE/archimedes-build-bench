@@ -19,6 +19,48 @@ SYNTHETIC_CASES = ROOT / "dev" / "synthetic_cases"
 
 
 class SyntheticRepairTests(unittest.TestCase):
+    def test_debian_multiarch_path_uses_target_triplet_from_dpkg_architecture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = json.dumps(
+                {
+                    "case_id": "generic-multiarch-path",
+                    "source_architecture": "x86_64",
+                    "target_architecture": "aarch64",
+                }
+            )
+            log = (
+                "chmod: cannot access "
+                "'debian/pkg/usr/lib/x86_64-linux-gnu/nodejs/tool.js': "
+                "No such file or directory\n"
+                "dpkg-buildpackage: error: debian/rules binary-arch subprocess returned exit status 2\n"
+            )
+            repo, _ = make_workspace(root, metadata=metadata, log=log)
+            (repo / "debian").mkdir()
+            rules = repo / "debian" / "rules"
+            rules.write_text(
+                "#!/usr/bin/make -f\n"
+                "override_dh_fixperms:\n"
+                "\tchmod +x debian/pkg/usr/lib/x86_64-linux-gnu/nodejs/tool.js\n",
+                encoding="utf-8",
+            )
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(
+                outcome.metrics.selected_repair_family,
+                RepairFamily.PACKAGING_RULE.value,
+            )
+            self.assertIn("debian/rules", outcome.result.modified_paths)
+            self.assertIn(
+                "$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)",
+                rules.read_text(encoding="utf-8"),
+            )
+
     def test_every_synthetic_case_selects_expected_safe_repair_family(self) -> None:
         case_directories = sorted(path for path in SYNTHETIC_CASES.iterdir() if path.is_dir())
         self.assertEqual(len(case_directories), 16)

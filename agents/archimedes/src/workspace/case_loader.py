@@ -29,6 +29,33 @@ _LOG_NAMES = (
 _RELEASED_CASE_SCHEMA = "buildbench.case.v0.1"
 _RELEASED_TASK_TYPE = "cross_arch_package_build_repair"
 _MAX_METADATA_BYTES = 1_000_000
+_LOG_HEAD_BYTES = min(256_000, MAX_LOG_CHARACTERS // 4)
+
+
+def _bounded_inline_log(value: str) -> str:
+    if len(value) <= MAX_LOG_CHARACTERS:
+        return value
+    tail = MAX_LOG_CHARACTERS - _LOG_HEAD_BYTES
+    return (
+        value[:_LOG_HEAD_BYTES]
+        + "\n[... middle of oversized build log omitted ...]\n"
+        + value[-tail:]
+    )
+
+
+def _read_bounded_log(path: Path) -> str:
+    """Preserve setup and the terminal failure without loading an oversized log."""
+    size = path.stat().st_size
+    with path.open("rb") as stream:
+        if size <= MAX_LOG_CHARACTERS:
+            data = stream.read(MAX_LOG_CHARACTERS)
+        else:
+            tail_bytes = MAX_LOG_CHARACTERS - _LOG_HEAD_BYTES
+            head = stream.read(_LOG_HEAD_BYTES)
+            stream.seek(-tail_bytes, 2)
+            tail = stream.read(tail_bytes)
+            data = head + b"\n[... middle of oversized build log omitted ...]\n" + tail
+    return data.decode("utf-8", errors="replace")
 
 
 def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
@@ -116,7 +143,7 @@ def _released_case_identity(repo_dir: Path) -> tuple[str | None, str | None, str
 def _load_log(input_dir: Path, metadata: dict[str, JSONValue]) -> str:
     inline = metadata.get("build_log") or metadata.get("failure_log")
     if isinstance(inline, str):
-        return inline[:MAX_LOG_CHARACTERS]
+        return _bounded_inline_log(inline)
     configured = (
         metadata.get("initial_build_log")
         or metadata.get("build_log_path")
@@ -140,8 +167,10 @@ def _load_log(input_dir: Path, metadata: dict[str, JSONValue]) -> str:
         except (OSError, ValueError):
             continue
         if resolved.is_file():
-            data = resolved.read_bytes()[:MAX_LOG_CHARACTERS]
-            return data.decode("utf-8", errors="replace")
+            try:
+                return _read_bounded_log(resolved)
+            except OSError:
+                continue
     return ""
 
 

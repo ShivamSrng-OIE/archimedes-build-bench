@@ -11,6 +11,7 @@ from ..constants import MAX_TEXT_FILE_BYTES
 _BUILD_FILES = {
     "CMakeLists.txt", "Makefile", "configure", "configure.ac", "meson.build",
     "BUILD", "BUILD.bazel", "WORKSPACE", "Cargo.toml", "pyproject.toml", "setup.py",
+    "rules", "configure.in", "meson_options.txt",
 }
 _SKIP = {".git", ".hg", ".svn", "node_modules", "__pycache__"}
 

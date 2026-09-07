@@ -318,7 +318,19 @@ class RepairController:
             requested.append(failure.frontier.primary_file)
         if isinstance(recommended_files, list):
             requested.extend(value for value in recommended_files if isinstance(value, str))
-        requested.extend(inventory_repository(self.workspace.repo).build_files[:4])
+        inventory = inventory_repository(self.workspace.repo)
+        requested.extend(inventory.build_files[:4])
+        packaging = sorted(
+            inventory.packaging_files,
+            key=lambda path: (
+                0 if path == "debian/rules" else
+                1 if path == "debian/control" else
+                2 if path.endswith((".install", ".symbols", ".links", ".dirs")) else
+                3,
+                path,
+            ),
+        )
+        requested.extend(packaging[:4])
         snippets: list[SearchSnippet] = []
         for relative in dict.fromkeys(requested):
             if len(snippets) >= 8 or any(part.startswith(".") for part in relative.replace("\\", "/").split("/")):
@@ -419,6 +431,7 @@ class RepairController:
             f"source_architecture={case.source_architecture.raw}\n"
             f"target_architecture={case.target_architecture.raw}\n"
             f"first_diagnostic={failure.primary_diagnostic}\n"
+            f"causal_log_context:\n{failure.frontier.log_excerpt}\n"
             "What source-world assumption can fail in the target world?"
         )
         prompt = (

@@ -29,11 +29,18 @@ _FAMILY_STAGE = {
 }
 
 
-def frontier_from_family(family: FailureFamily, *, signature: str, excerpt: str) -> FailureFrontier:
+def frontier_from_family(
+    family: FailureFamily,
+    *,
+    signature: str,
+    excerpt: str,
+    primary_file: str | None = None,
+) -> FailureFrontier:
     stage = _FAMILY_STAGE[family]
     return FailureFrontier(
         stage=stage,
         error_signature=signature,
+        primary_file=primary_file,
         log_excerpt=excerpt,
         confidence=0.90 if stage is not FrontierStage.UNKNOWN else 0.20,
     )

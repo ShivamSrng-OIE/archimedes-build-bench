@@ -1,6 +1,6 @@
 # Build-Bench submission and evaluation checklist for Archimedes
 
-Last live-site audit: **1 September 2026 UTC**.
+Last live-site audit: **7 September 2026 UTC**.
 
 This checklist is subordinate to the current CSTCloud platform, versioned competition rules, and
 the Starter Kit used to create an upload. The former GitHub Pages site is no longer the operational
@@ -47,9 +47,9 @@ Hosted Smoke Test contract. It does **not** prove repair performance on the publ
 compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
 evaluation.
 
-Source development now targets Archimedes `0.2.3`. Any source, manifest, dependency, or configuration
+Source development now targets Archimedes `0.2.4`. Any source, manifest, dependency, or configuration
 change after the qualified `0.2.2` upload requires a new immutable upload. Never describe local
-`0.2.3` results as results of submission `20260901T004910Z-0a48b255`.
+`0.2.4` results as results of submission `20260901T004910Z-0a48b255`.
 
 ## Current platform and release state
 
@@ -59,8 +59,11 @@ At the audit time:
 - Managed Python 3.11 and Agent protocol `0.1` remain the published submission contract.
 - Development Cases `v0.1` are published: 200 Ubuntu Launchpad cases, split evenly between
   `x86_64-to-aarch64` and `aarch64-to-x86_64`.
-- The Development Cases archive SHA-256 is
-  `87757c62e7be128ae50c7ce7192d74ae80ea789391acce004e3f6445ca7bcc8a`.
+- The current Development Cases archive was generated at `2026-09-07T01:22:06Z`; its size is
+  222,919,777 bytes and SHA-256 is
+  `94372a28dbd81ece8f5007b83ec4b4ff1b0590de43a528be4461ae7f2bbd675d`.
+- This digest supersedes an earlier archive under the same `v0.1` label. Pin the digest as well as
+  the version whenever development evidence is recorded.
 - Separate protocol-schema downloads are still marked **Coming soon**.
 - Official runtime images are still marked **Registry pending**.
 - The public platform health response reports Full Evaluation disabled, not ready, and no Full
@@ -69,10 +72,9 @@ At the audit time:
   concurrency, build-feedback budget, network/API policy, credential delivery, submission frequency,
   rerun/cancellation rules, and feedback visibility as pending.
 
-The live pages are internally ahead of their schedule in two places: registration is active and the
-Development Cases are downloadable even though some timeline copy points to later milestones. Use
-the live portal and release index for current availability, but do not infer unpublished evaluation
-limits from pilot behavior.
+The public phase is now listed as open. The public health endpoint still reports Full Evaluation
+disabled, not ready, and without a worker. Use the live portal and release index for availability,
+but do not infer unpublished evaluation limits from pilot behavior.
 
 ## Critical foundation-model gate
 
@@ -98,16 +100,22 @@ Record for the evaluated immutable version:
 ## Public Development Cases v0.1
 
 The public archive contains case metadata using `schema_version: buildbench.case.v0.1`, with
-architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.3`
-accepts this shape as well as the existing flat Starter Kit task shape.
+architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.4`
+accepts this shape as well as the existing flat Starter Kit task shape. This version also
+retains the tail of oversized logs, ranks concrete Debian/linker/test failures ahead of wrapper
+errors, extracts causal repository paths, and prioritizes Debian packaging files for model context.
 
 The development release excludes hidden labels, reference repairs, source-side success logs,
 organizer audit records, and previous run artifacts. Do not seek, reconstruct, or bundle those
 materials. Preserve upstream and distribution licenses when using or redistributing source packages.
 
-Static analysis of all 200 released failure logs produced a causal diagnostic and a recognized
-failure-family classification for every log. This is only ingestion/parser evidence. It must not be
-reported as Verified Build Success Rate because the organizer's target builds were not run.
+All 1,510 paths in the archive's internal `SHA256SUMS` verified directly against ZIP members. Five
+source-input filenames contain Debian epoch colons and cannot be extracted to NTFS; use a Linux
+filesystem for complete materialization. Static analysis of all 200 released failure logs produced
+a non-empty diagnostic and recognized family for every log, including ten logs over two megabytes.
+One actual-source replay selected and applied the generic multiarch-path repair to `node-re2` while
+changing only `debian/rules`. These are integrity, ingestion, and candidate-selection results—not
+Verified Build Success Rate, because organizer-equivalent target builds were not run.
 
 ## Build and package a new candidate
 
