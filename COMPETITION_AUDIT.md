@@ -19,7 +19,7 @@ the participant supplied for their own version.
 |---|---|---|
 | `index.html` | Runnable LLM Agent; x86_64, aarch64, riscv64 bidirectional scope; verified target builds determine success. | Architecture model supports all three ISAs; worktree repair and canonical-patch model documented. |
 | `task.html` | Read Case evidence, autonomously modify only the permitted worktree, write structured completion output; no patch-similarity scoring. | Workspace boundary, result writer, guarded edits, and clean-worktree assumptions implemented. |
-| `submission.html` | Shallow managed-Python 3.11 ZIP using manifest/protocol `0.1`; non-interactive entrypoint; exact dependency pins; no secrets or runtime artifacts. | Hosted static check and Smoke Test passed for v0.2.8. Manifest remains protocol `0.1`; standard-library-only lockfile remains valid. |
+| `submission.html` | Shallow managed-Python 3.11 ZIP using manifest/protocol `0.1`; non-interactive entrypoint; exact dependency pins; no secrets or runtime artifacts. | Hosted static check and Smoke Test passed for v0.2.9. Manifest remains protocol `0.1`; standard-library-only lockfile remains valid. |
 | `rules.html` | LLM foundation model; no Case-specific answers, hidden material, build bypass, sandbox/evaluator access, or undeclared intervention; reproducibility disclosure required. | Case-specific example path was previously removed; path/policy critics and disclosure exist. Real-model delivery remains unresolved and is a Full Evaluation blocker. |
 | `timeline.html` | Public development and validation are listed as open on 7 September; final Agent selection is 13 November; results are due by 20 November. | Public resources were refreshed, but the live rules still contain pending parameters after the scheduled freeze. Recheck before evaluation. |
 | `faq.html` | No custom Docker in rc.2; no current `bb-build`; no secrets; Smoke Test is qualification only; separate versioned Case sets. | Managed runtime retained; `BbBuildFeedbackProvider` remains fail-closed; qualification is not represented as an official score. |
@@ -27,7 +27,7 @@ the participant supplied for their own version.
 | `register.html` | Captain account, accurate 1-5 member roster, unique Team name, optional unique institutional email, acceptance of rules. | Team registration is proven indirectly by the participant's authenticated qualified submission; roster accuracy remains a participant responsibility. |
 | `login.html` | Captain signs in to manage Team and submissions. | No codebase impact. Credentials are never stored in the repository. |
 | `team.html` | Team name is public leaderboard identity; registration/roster is maintained in the portal. | Participant action only; no Agent-bundle impact. |
-| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.8 is qualified under submission `20260907T040030Z-2c652819`; Full Evaluation remains disabled in the portal. |
+| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.9 is qualified under submission `20260907T041925Z-629a77c4`; Full Evaluation remains disabled in the portal. |
 | `evaluation-detail.html` | Evaluation advances through queued, preparing, evaluating, finalizing, completed; score appears only after finalization. | No Full Evaluation is documented for this candidate; current platform health reports Full Evaluation disabled. |
 | `leaderboard.html` | Hosted Smoke Tests do not affect ranking; only compatible organizer-published Full Evaluations are compared; Build Success Rate is primary. | No score claim is made from the 1/1 Smoke Test or public-log parser audit. |
 | `contact.html` | Official support email is `buildbench-challenge@googlegroups.com`. | Recorded in the submission checklist for unresolved policy questions. |
@@ -105,8 +105,9 @@ This is also candidate-selection evidence rather than a verified target-build su
 The resulting v0.2.9 candidate at commit `291081f` passes 100 tests plus 20 subtests, Ruff, strict
 mypy over 73 source files, bytecode compilation, and the official static Agent check. Two official
 package runs produced the same 90,304-byte ZIP with SHA-256
-`6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668`. It is not yet qualified;
-qualified v0.2.8 remains the portal fallback.
+`6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668`. The portal then qualified
+this exact digest under submission `20260907T041925Z-629a77c4` after the hosted `hello` Case passed
+all pipeline stages; v0.2.8 remains only a fallback snapshot.
 
 An organizer announcement published by Nankai University on 27 August states that formal ranking is
 planned over 1,016 hidden Cases spanning all six migration directions. It also names Meituan as a
@@ -118,8 +119,8 @@ Agent-side assumption or embedded credential.
 
 Live CSTCloud portal evidence captured on 7 September 2026:
 
-- Agent/version: `archimedes` `0.2.8`
-- Submission ID: `20260907T040030Z-2c652819`
+- Agent/version: `archimedes` `0.2.9`
+- Submission ID: `20260907T041925Z-629a77c4`
 - Public status: `Qualified`
 - Hosted Smoke Test: `hello` passed 1/1
 - Pipeline evidence: submission valid, Case prepared, initial failure reproduced, Agent completed,
@@ -127,20 +128,20 @@ Live CSTCloud portal evidence captured on 7 September 2026:
 
 Uploaded local archive:
 
-`dist/agent-submission.zip`
+`dist/agent-submission-archimedes-v0.2.9-20260907T041925Z-629a77c4.zip`
 
 Local SHA-256:
 
-`da9a37379fb6e92022c8f0e9e21c7228af6d4a358238cfaf519687baa584dd79`
+`6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668`
 
-The portal displayed the matching digest prefix `da9a37379fb6…`; the complete local digest was
+The portal displayed the matching digest prefix `6a86ef3249bc…`; the complete local digest was
 recomputed immediately before browser upload. The immutable version is qualified but has no Full
 Evaluation because the portal action remains disabled.
 
 ## Material changes since the prior local checklist
 
 1. The operational registration/submission portal is now CSTCloud, not GitHub Pages.
-2. Registration is active and the participant has a qualified immutable v0.2.8 upload.
+2. Registration is active and the participant has a qualified immutable v0.2.9 upload.
 3. Development Cases v0.1 were silently regenerated under the same label; the 7 September digest
    and all internal checksums are verified.
 4. The released development metadata shape adds nested `platform`, `task`, and `paths` fields that
@@ -174,5 +175,5 @@ update.
 1. Obtain the organizer-published real-model/network/credential configuration and perform an
    organizer-compatible real-model smoke run.
 2. Wait for Full Evaluation readiness and frozen operational limits.
-3. Qualify and reconfirm the exact v0.2.9 candidate before requesting the first Full Evaluation;
-   retain qualified v0.2.8 as the fallback until that succeeds.
+3. Reconfirm submission `20260907T041925Z-629a77c4` immediately before requesting the first Full
+   Evaluation; retain qualified v0.2.8 only as a fallback snapshot.

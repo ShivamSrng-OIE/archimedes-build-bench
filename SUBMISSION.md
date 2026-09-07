@@ -25,8 +25,8 @@ The following organizer-run qualification evidence was reported from the CSTClou
 
 ```text
 Agent:          archimedes
-Agent version:  0.2.8
-Submission ID:  20260907T040030Z-2c652819
+Agent version:  0.2.9
+Submission ID:  20260907T041925Z-629a77c4
 Status:         Qualified
 Hosted Smoke:   hello succeeded (1/1)
 Validation:     static check, Agent execution, canonical patch, and final build all succeeded
@@ -35,42 +35,41 @@ Validation:     static check, Agent execution, canonical patch, and final build 
 The locally retained archive is:
 
 ```text
-dist/agent-submission.zip
-SHA-256: da9a37379fb6e92022c8f0e9e21c7228af6d4a358238cfaf519687baa584dd79
+dist/agent-submission-archimedes-v0.2.9-20260907T041925Z-629a77c4.zip
+SHA-256: 6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668
 ```
 
 The complete local digest was recomputed immediately before browser upload, and the portal displays
-the matching prefix `da9a37379fb6…` for the immutable version.
+the matching prefix `6a86ef3249bc…` for the immutable version.
 
 Qualification proves that this immutable bundle satisfies the current static package checks and the
 Hosted Smoke Test contract. It does **not** prove repair performance on the public Development Cases,
 compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
 evaluation.
 
-Any source, manifest, dependency, or configuration change after this qualified `0.2.8` upload
+Any source, manifest, dependency, or configuration change after this qualified `0.2.9` upload
 requires a new version and immutable upload. Do not attribute later local changes to submission
-`20260907T040030Z-2c652819`.
+`20260907T041925Z-629a77c4`.
 
-Local development now targets `0.2.9`. It is a separate candidate until its own immutable upload
-and Hosted Smoke Test complete; qualified `0.2.8` remains the fallback in the portal.
-
-Prepared v0.2.9 candidate:
+Qualified v0.2.9 release:
 
 ```text
 Source commit:  291081f
-Archive:        dist/agent-submission.zip
+Submission ID:  20260907T041925Z-629a77c4
+Archive:        dist/agent-submission-archimedes-v0.2.9-20260907T041925Z-629a77c4.zip
 Archive bytes:  90,304
 SHA-256:        6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668
 Static check:   passed (79 files; standard-library-only dependency lock)
 Test suite:     100 passed, 20 subtests passed
 Quality gates:  Ruff passed; strict mypy passed for 73 source files; compileall passed
 Reproducibility: two consecutive official package runs produced the same SHA-256
+Hosted Smoke:   hello succeeded (1/1); final clean-patch validation succeeded
 ```
 
 The official local `bb ready` orchestration is still blocked before testing by the unpublished
 `buildbench-validator-runtime:v0` and `buildbench-example-assets:v0` images. This is an organizer
-asset-availability limitation, not a substitute for qualification; v0.2.9 still requires its own
-Hosted Smoke Test before it can be selected.
+asset-availability limitation. The organizer-hosted pipeline supplied those assets and qualified
+the exact immutable v0.2.9 archive successfully.
 
 ## Current platform and release state
 
@@ -217,9 +216,9 @@ third-party services, nondeterminism, caching, dependencies, and reproducibility
 
 ## Items requiring participant attention
 
-- Keep the qualified `0.2.8` archive, digest, and submission ID immutable and backed up.
-- Treat portal submission `20260907T040030Z-2c652819` as the only version carrying the recorded
-  v0.2.8 qualification evidence.
+- Keep the qualified `0.2.9` archive, digest, and submission ID immutable and backed up.
+- Treat portal submission `20260907T041925Z-629a77c4` as the only version carrying the recorded
+  v0.2.9 qualification evidence; retain v0.2.8 only as a fallback snapshot.
 - Do not start Full Evaluation while the platform reports it disabled or before model/network policy
   and resource limits are published.
 - Confirm the organizer-supported real LLM configuration before evaluating; `mock` is development
