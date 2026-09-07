@@ -13,7 +13,7 @@ from ..architecture.familiarity import assess_familiarity
 from ..architecture.hazard_scanner import ArchitectureHazard, scan_architecture_hazards
 from ..architecture.profile import construct_profile
 from ..architecture.semantic_anchor import extract_anchor, validate_anchor
-from ..build.feedback import BuildBudget, BuildFeedbackProvider
+from ..build.feedback import BuildBudget, BuildFeedbackProvider, BuildFeedbackResult
 from ..config import ContextMode, RuntimeConfig
 from ..constants import MAX_TEXT_FILE_BYTES, PROTOCOL_VERSION, RELIABILITY
 from ..context.repository_search import SearchSnippet, inventory_repository, search_regex
@@ -42,9 +42,9 @@ from ..repair.planner import (
 from ..repair.policy_critic import passes_policy_critic
 from ..result_writer import write_diagnostic
 from ..schemas import (
-    AgentResult, Architecture, ConsequenceLevel, EvidenceKind, JSONValue,
-    HypothesisStatus, Probe, RepairAttempt, RepairDecision, SemanticAnchor,
-    RepairFamily,
+    AgentResult, Architecture, ConsequenceLevel, EvidenceItem, EvidenceKind, FailureAnalysis,
+    HypothesisStatus, JSONValue, PatchCandidate, Probe, RepairAttempt, RepairDecision,
+    RepairFamily, SemanticAnchor,
 )
 from ..workspace.case_loader import load_case
 from ..workspace.path_policy import PathPolicy
@@ -99,7 +99,7 @@ class RepairController:
             self.trace.transition(stage, **attributes)
 
     @staticmethod
-    def _latest_failure_evidence(ledger: EvidenceLedger):
+    def _latest_failure_evidence(ledger: EvidenceLedger) -> EvidenceItem | None:
         return next(
             (
                 item
@@ -192,7 +192,7 @@ class RepairController:
         hazards: list[ArchitectureHazard],
         anchors: list[SemanticAnchor],
         ledger: EvidenceLedger,
-    ):
+    ) -> PatchCandidate | None:
         from ..schemas import CaseData, FailureAnalysis
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
@@ -265,7 +265,7 @@ class RepairController:
 
     def _deterministic_rule_candidate(
         self, *, case: object, failure: object, ledger: EvidenceLedger
-    ):
+    ) -> PatchCandidate | None:
         """Build a candidate only when a generic rule has unique file and log support."""
         from ..schemas import CaseData, FailureAnalysis
 
@@ -421,7 +421,7 @@ class RepairController:
 
     def _consult_model_if_configured(
         self, case: object, failure: object, ledger: EvidenceLedger
-    ):
+    ) -> PatchCandidate | None:
         if self.model_router is None:
             return None
         from ..schemas import CaseData, FailureAnalysis
@@ -690,7 +690,7 @@ class RepairController:
         anchors: list[SemanticAnchor],
         ledger: EvidenceLedger,
         excluded_families: set[RepairFamily] | None = None,
-    ):
+    ) -> PatchCandidate | None:
         excluded = excluded_families or set()
         candidate = None
         if self.config.features.repair_rules:
@@ -723,9 +723,9 @@ class RepairController:
         )
         return candidate
 
-    def _feedback_failure(self, feedback: object, ledger: EvidenceLedger):
-        from ..build.feedback import BuildFeedbackResult
-
+    def _feedback_failure(
+        self, feedback: object, ledger: EvidenceLedger
+    ) -> FailureAnalysis:
         assert isinstance(feedback, BuildFeedbackResult)
         failure = analyze_build_log(feedback.raw_log)
         failure.frontier = feedback.frontier

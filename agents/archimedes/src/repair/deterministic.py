@@ -213,6 +213,68 @@ def _cmake_feature_check(files: list[tuple[str, str]], log: str) -> Deterministi
     return None
 
 
+def _autoconf_rejected_x86_flags(
+    files: list[tuple[str, str]], log: str, case: CaseData
+) -> DeterministicMatch | None:
+    """Remove a unique set of x86-only flags explicitly rejected by a non-x86 compiler."""
+    if (
+        case.source_architecture.canonical is not Architecture.X86_64
+        or case.target_architecture.canonical
+        not in {Architecture.AARCH64, Architecture.RISCV64}
+    ):
+        return None
+
+    rejected = {
+        match.group("flag")
+        for match in re.finditer(
+            r"unrecognized command-line option\s+[\"'‘’]"
+            r"(?P<flag>-(?:m(?:sse\d*(?:\.\d)?|ssse3|avx\d*|fpmath=sse)))"
+            r"[\"'‘’]",
+            log,
+            re.I,
+        )
+    }
+    if not rejected:
+        return None
+
+    matches: list[tuple[str, str]] = []
+    for path, text in files:
+        if Path(path).name != "configure.ac":
+            continue
+        for line in text.splitlines():
+            if all(
+                re.search(rf"(?<!\S){re.escape(flag)}(?!\S)", line)
+                for flag in rejected
+            ):
+                matches.append((path, line))
+    if len(matches) != 1:
+        return None
+
+    path, expected = matches[0]
+    indentation = expected[: len(expected) - len(expected.lstrip(" \t"))]
+    replacement = expected
+    for flag in sorted(rejected, key=len, reverse=True):
+        replacement = re.sub(
+            rf"(?<!\S){re.escape(flag)}(?!\S)", "", replacement
+        )
+    replacement = indentation + replacement.lstrip(" \t")
+    replacement = re.sub(r"(?<=\S)[ \t]{2,}", " ", replacement)
+    if replacement == expected:
+        return None
+    flags = ", ".join(sorted(rejected))
+    rationale = (
+        "remove the uniquely located x86-only optimization flags that the target compiler "
+        f"explicitly rejected ({flags}), preserving the remaining portable flags"
+    )
+    return DeterministicMatch(
+        RepairFamily.PORTABLE_FALLBACK,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.96,
+        risk=0.04,
+    )
+
+
 def _cmake_portable_source(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
     if not re.search(r"(?:x86intrin|immintrin)\.h.*(?:no such file|not found)", log, re.I | re.S):
         return None
@@ -520,6 +582,9 @@ def match_deterministic_repair(
     multiarch = _debian_multiarch_path(files, log, case)
     if multiarch is not None:
         return multiarch
+    autoconf_flags = _autoconf_rejected_x86_flags(files, log, case)
+    if autoconf_flags is not None:
+        return autoconf_flags
     matchers = (
         _unconditional_build_abort,
         _cmake_feature_check,

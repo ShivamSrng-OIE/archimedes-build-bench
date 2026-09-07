@@ -19,6 +19,79 @@ SYNTHETIC_CASES = ROOT / "dev" / "synthetic_cases"
 
 
 class SyntheticRepairTests(unittest.TestCase):
+    def test_autoconf_removes_only_x86_flags_rejected_by_arm_compiler(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = json.dumps(
+                {
+                    "case_id": "generic-autoconf-x86-flags",
+                    "source_architecture": "x86_64",
+                    "target_architecture": "aarch64",
+                }
+            )
+            log = (
+                "gcc: error: unrecognized command-line option '-msse'\n"
+                "gcc: error: unrecognized command-line option '-msse2'\n"
+                "gcc: error: unrecognized command-line option '-mfpmath=sse'\n"
+            )
+            repo, _ = make_workspace(root, metadata=metadata, log=log)
+            configure = repo / "configure.ac"
+            configure.write_text(
+                'PLUGIN_CFLAGS="-g \\\n'
+                "        -msse -msse2 -mfpmath=sse -ffast-math -O3 \\\n"
+                '        -fPIC"\n',
+                encoding="utf-8",
+            )
+            generated = repo / "configure"
+            generated.write_text(
+                "generated -msse -msse2 -mfpmath=sse\n", encoding="utf-8"
+            )
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(
+                outcome.metrics.selected_repair_family,
+                RepairFamily.PORTABLE_FALLBACK.value,
+            )
+            self.assertEqual(outcome.result.modified_paths, ["configure.ac"])
+            repaired = configure.read_text(encoding="utf-8")
+            self.assertNotIn("-msse", repaired)
+            self.assertNotIn("-mfpmath=sse", repaired)
+            self.assertIn("\n        -ffast-math -O3", repaired)
+            self.assertIn("-msse", generated.read_text(encoding="utf-8"))
+
+    def test_autoconf_rejected_x86_flags_require_one_causal_source_line(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = json.dumps(
+                {
+                    "case_id": "ambiguous-autoconf-x86-flags",
+                    "source_architecture": "x86_64",
+                    "target_architecture": "aarch64",
+                }
+            )
+            repo, _ = make_workspace(
+                root,
+                metadata=metadata,
+                log="gcc: error: unrecognized command-line option '-msse'\n",
+            )
+            configure = repo / "configure.ac"
+            original = "FIRST_CFLAGS=-msse\nSECOND_CFLAGS=-msse\n"
+            configure.write_text(original, encoding="utf-8")
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(outcome.result.modified_paths, [])
+            self.assertEqual(configure.read_text(encoding="utf-8"), original)
+
     def test_debian_multiarch_path_uses_target_triplet_from_dpkg_architecture(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

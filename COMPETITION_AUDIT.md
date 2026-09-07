@@ -23,7 +23,7 @@ the participant supplied for their own version.
 | `rules.html` | LLM foundation model; no Case-specific answers, hidden material, build bypass, sandbox/evaluator access, or undeclared intervention; reproducibility disclosure required. | Case-specific example path was previously removed; path/policy critics and disclosure exist. Real-model delivery remains unresolved and is a Full Evaluation blocker. |
 | `timeline.html` | Public development and validation are listed as open on 7 September; final Agent selection is 13 November; results are due by 20 November. | Public resources were refreshed, but the live rules still contain pending parameters after the scheduled freeze. Recheck before evaluation. |
 | `faq.html` | No custom Docker in rc.2; no current `bb-build`; no secrets; Smoke Test is qualification only; separate versioned Case sets. | Managed runtime retained; `BbBuildFeedbackProvider` remains fail-closed; qualification is not represented as an official score. |
-| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.8. No dataset content is bundled. |
+| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.9. No dataset content is bundled. |
 | `register.html` | Captain account, accurate 1-5 member roster, unique Team name, optional unique institutional email, acceptance of rules. | Team registration is proven indirectly by the participant's authenticated qualified submission; roster accuracy remains a participant responsibility. |
 | `login.html` | Captain signs in to manage Team and submissions. | No codebase impact. Credentials are never stored in the repository. |
 | `team.html` | Team name is public leaderboard identity; registration/roster is maintained in the portal. | Participant action only; no Agent-bundle impact. |
@@ -96,6 +96,12 @@ Agent's confidence, portability, policy, and atomic-edit gates without model cal
 organizer-equivalent target build was available, so these are candidate-selection evidence, not
 verified repair successes.
 
+An additional actual-source replay of released case `qmidiarp` selected a generic portable-flag
+repair for its non-x86 target compiler diagnostics. It changed only the canonical `configure.ac`
+assignment, removed exactly the three rejected x86-only flags (`-msse`, `-msse2`, and
+`-mfpmath=sse`), preserved the remaining portable flags, and left generated `configure` untouched.
+This is also candidate-selection evidence rather than a verified target-build success.
+
 An organizer announcement published by Nankai University on 27 August states that formal ranking is
 planned over 1,016 hidden Cases spanning all six migration directions. It also names Meituan as a
 model-API supporter. The participant rules still do not publish the corresponding endpoint,
@@ -162,4 +168,5 @@ update.
 1. Obtain the organizer-published real-model/network/credential configuration and perform an
    organizer-compatible real-model smoke run.
 2. Wait for Full Evaluation readiness and frozen operational limits.
-3. Reconfirm the exact qualified v0.2.8 artifact before requesting the first Full Evaluation.
+3. Qualify and reconfirm the exact v0.2.9 candidate before requesting the first Full Evaluation;
+   retain qualified v0.2.8 as the fallback until that succeeds.

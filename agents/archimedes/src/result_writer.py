@@ -8,17 +8,18 @@ import tempfile
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Any, cast
 
 from .schemas import AgentResult, JSONValue
 
 
 def _json_default(value: object) -> JSONValue:
     if isinstance(value, Enum):
-        return value.value
+        return cast(JSONValue, value.value)
     if isinstance(value, Path):
         return str(value)
     if is_dataclass(value):
-        return asdict(value)  # type: ignore[arg-type]
+        return cast(JSONValue, asdict(cast(Any, value)))
     raise TypeError(f"cannot serialize {type(value).__name__}")
 
 

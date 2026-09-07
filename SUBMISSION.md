@@ -51,6 +51,9 @@ Any source, manifest, dependency, or configuration change after this qualified `
 requires a new version and immutable upload. Do not attribute later local changes to submission
 `20260907T040030Z-2c652819`.
 
+Local development now targets `0.2.9`. It is a separate candidate until its own immutable upload
+and Hosted Smoke Test complete; qualified `0.2.8` remains the fallback in the portal.
+
 ## Current platform and release state
 
 At the audit time:
@@ -100,7 +103,7 @@ Record for the evaluated immutable version:
 ## Public Development Cases v0.1
 
 The public archive contains case metadata using `schema_version: buildbench.case.v0.1`, with
-architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.8`
+architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.9`
 accepts this shape as well as the existing flat Starter Kit task shape. This version also
 retains the tail of oversized logs, ranks concrete Debian/linker/test failures ahead of wrapper
 errors and echoed commands, extracts causal repository paths, and prioritizes Debian packaging
@@ -121,6 +124,11 @@ Three actual-source replays selected generic multiarch-path repairs for `node-re
 changed only two failure-log-proven `.install` tokens under its declared debhelper compat 13. These
 are integrity, ingestion, and candidate-selection results—not Verified Build Success Rate, because
 organizer-equivalent target builds were not run.
+
+A fourth actual-source replay, `qmidiarp`, selected a portable-flag repair without a model call. It
+changed only `configure.ac`, removed exactly the x86-only flags explicitly rejected in the released
+ARM failure log, preserved the other flags, and did not edit generated `configure`. This remains
+candidate-selection evidence until an organizer-equivalent target build validates it.
 
 ## Build and package a new candidate
 
@@ -191,8 +199,9 @@ third-party services, nondeterminism, caching, dependencies, and reproducibility
 
 ## Items requiring participant attention
 
-- Keep the qualified `0.2.2` archive and submission ID immutable and backed up.
-- Compare its full platform SHA-256 with the retained local digest.
+- Keep the qualified `0.2.8` archive, digest, and submission ID immutable and backed up.
+- Treat portal submission `20260907T040030Z-2c652819` as the only version carrying the recorded
+  v0.2.8 qualification evidence.
 - Do not start Full Evaluation while the platform reports it disabled or before model/network policy
   and resource limits are published.
 - Confirm the organizer-supported real LLM configuration before evaluating; `mock` is development
