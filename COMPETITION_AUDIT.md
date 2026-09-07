@@ -23,11 +23,11 @@ the participant supplied for their own version.
 | `rules.html` | LLM foundation model; no Case-specific answers, hidden material, build bypass, sandbox/evaluator access, or undeclared intervention; reproducibility disclosure required. | Case-specific example path was previously removed; path/policy critics and disclosure exist. Real-model delivery remains unresolved and is a Full Evaluation blocker. |
 | `timeline.html` | Public development and validation are listed as open on 7 September; final Agent selection is 13 November; results are due by 20 November. | Public resources were refreshed, but the live rules still contain pending parameters after the scheduled freeze. Recheck before evaluation. |
 | `faq.html` | No custom Docker in rc.2; no current `bb-build`; no secrets; Smoke Test is qualification only; separate versioned Case sets. | Managed runtime retained; `BbBuildFeedbackProvider` remains fail-closed; qualification is not represented as an official score. |
-| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.4. No dataset content is bundled. |
+| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.5. No dataset content is bundled. |
 | `register.html` | Captain account, accurate 1-5 member roster, unique Team name, optional unique institutional email, acceptance of rules. | Team registration is proven indirectly by the participant's authenticated qualified submission; roster accuracy remains a participant responsibility. |
 | `login.html` | Captain signs in to manage Team and submissions. | No codebase impact. Credentials are never stored in the repository. |
 | `team.html` | Team name is public leaderboard identity; registration/roster is maintained in the portal. | Participant action only; no Agent-bundle impact. |
-| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.2 is qualified under submission `20260901T004910Z-0a48b255`; current source changes are versioned as v0.2.4. |
+| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.2 is qualified under submission `20260901T004910Z-0a48b255`; current source changes are versioned as v0.2.5. |
 | `evaluation-detail.html` | Evaluation advances through queued, preparing, evaluating, finalizing, completed; score appears only after finalization. | No Full Evaluation is documented for this candidate; current platform health reports Full Evaluation disabled. |
 | `leaderboard.html` | Hosted Smoke Tests do not affect ranking; only compatible organizer-published Full Evaluations are compared; Build Success Rate is primary. | No score claim is made from the 1/1 Smoke Test or public-log parser audit. |
 | `contact.html` | Official support email is `buildbench-challenge@googlegroups.com`. | Recorded in the submission checklist for unresolved policy questions. |
@@ -69,21 +69,22 @@ All 200 released target-failure logs were processed through Archimedes' determin
 
 | Failure family | Logs |
 |---|---:|
-| Compilation | 77 |
-| Test | 36 |
-| Packaging | 29 |
-| Linking | 26 |
-| Configuration | 12 |
-| Dependency | 8 |
+| Compilation | 82 |
+| Test | 41 |
+| Packaging | 28 |
+| Linking | 23 |
+| Configuration | 13 |
+| Dependency | 6 |
 | Environment | 6 |
-| Build preparation | 4 |
-| Artifact | 2 |
+| Artifact | 1 |
 
 Every log produced a non-empty primary diagnostic and a recognized family after suppressing benign
-zero summaries and generic cascades. Ten logs exceed two megabytes; bounded head-plus-tail loading
-kept their terminal failures. Ninety-two logs yielded a repository-path candidate for guarded
-context lookup. These are parser/context coverage results only and cannot be compared with Verified
-Build Success Rate.
+zero summaries, echoed compiler/Cargo commands, environment inventories, warning-only probes, and
+generic cascades. Ten logs exceed two megabytes; bounded head-plus-tail loading kept their terminal
+failures. One hundred four logs yielded a repository-path candidate for guarded context lookup, up
+from 92 before the second release-driven parser pass. No selected primary matched the audited set
+of known command/inventory/warning-only false-positive prefixes. These are parser/context coverage
+results only and cannot be compared with Verified Build Success Rate.
 
 An actual-source replay of released case `node-re2` selected the generic Debian multiarch repair,
 replacing one hard-coded source triplet in `debian/rules` with the target value obtained from
@@ -158,4 +159,4 @@ update.
    organizer-compatible real-model smoke run.
 3. Wait for Full Evaluation readiness and frozen operational limits.
 4. Decide whether to preserve qualified v0.2.2 for the first Full Evaluation or upload and qualify
-   v0.2.4 after the dataset-informed changes and full readiness checks.
+   v0.2.5 after the dataset-informed changes and full readiness checks.

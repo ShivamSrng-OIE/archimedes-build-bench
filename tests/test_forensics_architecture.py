@@ -71,6 +71,49 @@ class ForensicsArchitectureTests(unittest.TestCase):
         self.assertEqual(analysis.primary_diagnostic, "AssertionError: 132 != 0 : Got error code 132 back")
         self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
 
+    def test_release_log_does_not_treat_documentation_command_as_missing_tool(self) -> None:
+        analysis = analyze_build_log(
+            "canvas.h:205: warning: argument 'cx' of command @param is not found in the "
+            "argument list\n"
+            "canvas.cc:18:7: error: use of undeclared identifier 'cx'\n"
+        )
+        self.assertEqual(
+            analysis.primary_diagnostic,
+            "canvas.cc:18:7: error: use of undeclared identifier 'cx'",
+        )
+
+    def test_release_log_ignores_tex_and_configure_warnings(self) -> None:
+        analysis = analyze_build_log(
+            "chapter.tex:397: Warning: Command not found: \\downarrow\n"
+            "configure: WARNING: unrecognized options: --disable-werror\n"
+            "configure: error: C compiler cannot create executables\n"
+        )
+        self.assertEqual(
+            analysis.primary_diagnostic,
+            "configure: error: C compiler cannot create executables",
+        )
+        self.assertEqual(analysis.frontier.stage, FrontierStage.CONFIGURE)
+
+    def test_release_log_ignores_libtool_command_before_test_assertion(self) -> None:
+        analysis = analyze_build_log(
+            "/bin/bash ./libtool --tag=CC --mode=compile gcc -DERROR_LABEL=error -c test.c\n"
+            "libtool: compile: gcc -DERROR_LABEL=error -c test.c\n"
+            "Error: test/lib/server.c:16: assertion failed: *fd != -1\n"
+            "Error: child killed by signal 6 (Aborted)\n"
+        )
+        self.assertIn("assertion failed", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
+    def test_release_log_ignores_split_cargo_build_script_command(self) -> None:
+        analysis = analyze_build_log(
+            "' CARGO_PKG_NAME=demo CARGO_PKG_DESCRIPTION='Error helper' "
+            "target/build/demo/build-script-build`\n"
+            "store-test: db.cc:16: Assertion `last_ref' failed.\n"
+            "error: test failed, to rerun pass `-p demo --test store`\n"
+        )
+        self.assertIn("Assertion `last_ref' failed", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
     def test_primary_file_normalizes_launchpad_build_paths(self) -> None:
         self.assertEqual(
             identify_primary_file(
@@ -109,6 +152,51 @@ class ForensicsArchitectureTests(unittest.TestCase):
         )
         self.assertTrue(analysis.primary_diagnostic.startswith("Segmentation fault"))
         self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
+
+    def test_release_log_ignores_environment_and_echoed_cargo_commands(self) -> None:
+        analysis = analyze_build_log(
+            "Inherited environment: CARGO_PKG_DESCRIPTION='Flexible Error type'\n"
+            "     Running `CARGO=/usr/bin/cargo CARGO_PKG_NAME=anyhow rustc --crate-name anyhow`\n"
+            "src/arch.rs:41:9: error[E0432]: unresolved import `mach_o`\n"
+            "error: could not compile `mach-o-sys` due to 1 previous error\n"
+        )
+        self.assertEqual(
+            analysis.primary_diagnostic,
+            "src/arch.rs:41:9: error[E0432]: unresolved import `mach_o`",
+        )
+        self.assertEqual(analysis.frontier.primary_file, "src/arch.rs")
+
+    def test_release_log_prefers_compiler_error_over_echoed_compile_command(self) -> None:
+        analysis = analyze_build_log(
+            "cd /<<PKGBUILDDIR>>/obj-aarch64-linux-gnu && /usr/bin/c++ "
+            "-DERROR_LABEL=error -O2 -c source.c\n"
+            "source.c:17:4: error: unknown type name 'target_word'\n"
+            "make: *** [Makefile:20: source.o] Error 1\n"
+        )
+        self.assertEqual(
+            analysis.primary_diagnostic,
+            "source.c:17:4: error: unknown type name 'target_word'",
+        )
+        self.assertEqual(analysis.frontier.primary_file, "source.c")
+
+    def test_release_log_selects_dpkg_control_error(self) -> None:
+        analysis = analyze_build_log(
+            "dpkg-deb: error: parsing file 'debian/pkg/DEBIAN/control' near line 8\n"
+            "dpkg-buildpackage: error: debian/rules binary subprocess returned exit status 2\n"
+        )
+        self.assertTrue(analysis.primary_diagnostic.startswith("dpkg-deb: error:"))
+        self.assertEqual(analysis.frontier.stage, FrontierStage.PACKAGE)
+
+    def test_release_log_ignores_compiler_note_after_link_failure(self) -> None:
+        analysis = analyze_build_log(
+            "/usr/src/pkg/source.cpp:227:(.text+0xebd0): undefined reference to "
+            "`optimized_sse2'\n"
+            "cc1plus: note: unrecognized command-line option '-Wno-unused' may have been "
+            "intended to silence earlier diagnostics\n"
+            "collect2: error: ld returned 1 exit status\n"
+        )
+        self.assertIn("undefined reference", analysis.primary_diagnostic)
+        self.assertEqual(analysis.frontier.stage, FrontierStage.LINK)
 
     def test_error_signature_removes_unstable_material(self) -> None:
         first = "C:/Temp/a123/file.c:42:9: error: bad value '-march=x86-64-v3'"

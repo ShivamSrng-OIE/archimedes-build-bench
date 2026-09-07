@@ -47,9 +47,9 @@ Hosted Smoke Test contract. It does **not** prove repair performance on the publ
 compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
 evaluation.
 
-Source development now targets Archimedes `0.2.4`. Any source, manifest, dependency, or configuration
+Source development now targets Archimedes `0.2.5`. Any source, manifest, dependency, or configuration
 change after the qualified `0.2.2` upload requires a new immutable upload. Never describe local
-`0.2.4` results as results of submission `20260901T004910Z-0a48b255`.
+`0.2.5` results as results of submission `20260901T004910Z-0a48b255`.
 
 ## Current platform and release state
 
@@ -100,10 +100,11 @@ Record for the evaluated immutable version:
 ## Public Development Cases v0.1
 
 The public archive contains case metadata using `schema_version: buildbench.case.v0.1`, with
-architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.4`
+architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.5`
 accepts this shape as well as the existing flat Starter Kit task shape. This version also
 retains the tail of oversized logs, ranks concrete Debian/linker/test failures ahead of wrapper
-errors, extracts causal repository paths, and prioritizes Debian packaging files for model context.
+errors and echoed commands, extracts causal repository paths, and prioritizes Debian packaging
+files for model context.
 
 The development release excludes hidden labels, reference repairs, source-side success logs,
 organizer audit records, and previous run artifacts. Do not seek, reconstruct, or bundle those
@@ -112,7 +113,9 @@ materials. Preserve upstream and distribution licenses when using or redistribut
 All 1,510 paths in the archive's internal `SHA256SUMS` verified directly against ZIP members. Five
 source-input filenames contain Debian epoch colons and cannot be extracted to NTFS; use a Linux
 filesystem for complete materialization. Static analysis of all 200 released failure logs produced
-a non-empty diagnostic and recognized family for every log, including ten logs over two megabytes.
+a non-empty diagnostic and recognized family for every log, including ten logs over two megabytes;
+104 logs now yield a repository-path candidate and no selected primary matches the audited set of
+known command/inventory/warning-only false-positive prefixes.
 One actual-source replay selected and applied the generic multiarch-path repair to `node-re2` while
 changing only `debian/rules`. These are integrity, ingestion, and candidate-selection results—not
 Verified Build Success Rate, because organizer-equivalent target builds were not run.

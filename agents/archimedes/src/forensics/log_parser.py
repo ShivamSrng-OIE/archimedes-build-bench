@@ -26,23 +26,47 @@ class DiagnosticPattern:
 
 _PATTERNS = (
     DiagnosticPattern(re.compile(r"fatal error:.*(?:not found|no such file)", re.I), 100),
+    DiagnosticPattern(
+        re.compile(
+            r"(?:^|[/\\])(?:cc1|lto1|gcc|g\+\+|clang|clang\+\+|xgcc): "
+            r"(?:fatal |internal compiler )?error:",
+            re.I,
+        ),
+        100,
+    ),
+    DiagnosticPattern(
+        re.compile(r"(?:^|\s)[^\s:]+:\d+(?::\d+)?: (?:fatal )?error:", re.I), 100
+    ),
+    DiagnosticPattern(re.compile(r"(?:^|\s)error\[E\d+\]:", re.I), 100),
+    DiagnosticPattern(re.compile(r"(?:^|\s)(?:as|nasm):.*\bError:", re.I), 99),
     DiagnosticPattern(re.compile(r"(?:unrecognized|unknown|unsupported|bad value).*(?:option|argument|march|mcpu|mabi|-m)", re.I), 100),
     DiagnosticPattern(re.compile(r"(?:relocation .*can not be used|recompile with -fPIC)", re.I), 99),
     DiagnosticPattern(re.compile(r"build killed with signal|after \d+ minutes? of inactivity", re.I), 99),
     DiagnosticPattern(re.compile(r"(?:unknown|invalid).*(?:instruction|register|architecture|target)", re.I), 98),
     DiagnosticPattern(re.compile(r"\bBFD\b.*assertion fail", re.I), 98),
     DiagnosticPattern(re.compile(r"(?:intrinsic|builtin).*(?:mismatch|requires|undeclared|not available)", re.I), 96),
-    DiagnosticPattern(re.compile(r"(?:error:\s*invalid command|(?:command|executable).*not found)", re.I), 96),
+    DiagnosticPattern(
+        re.compile(
+            r"(?:error:\s*invalid command|:\s*command not found|"
+            r"(?:command|executable)\s+['\"`]?[-A-Za-z0-9_./+]+['\"`]?\s+"
+            r"(?:was\s+)?not found)",
+            re.I,
+        ),
+        96,
+    ),
     DiagnosticPattern(re.compile(r"can't exec .*no such file", re.I), 96),
     DiagnosticPattern(re.compile(r"(?:cannot|can't) (?:access|stat|get).*(?:no such file|not found|info from)", re.I), 95),
     DiagnosticPattern(re.compile(r"(?:cannot find \(any matches for\)|failed to remove .*no such file)", re.I), 95),
     DiagnosticPattern(re.compile(r"(?:ModuleNotFoundError|ImportError|FileNotFoundError|AttributeError|AssertionError):", re.I), 95),
+    DiagnosticPattern(re.compile(r"(?:assertion [`'][^`']+[`'] failed|assertion failed:|child killed by signal)", re.I), 95),
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol).*(?:atomic|__atomic|__sync)", re.I), 94),
     DiagnosticPattern(re.compile(r"dpkg-gensymbols: error:.*(?:disappeared|symbols file)", re.I), 93),
+    DiagnosticPattern(re.compile(r"dpkg-(?:deb|gencontrol): error:", re.I), 93),
+    DiagnosticPattern(re.compile(r"(?:^|\s)CMake Error(?: at|:)", re.I), 92),
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol)", re.I), 90),
     DiagnosticPattern(re.compile(r"(?:cannot find -l|library not found|missing package)", re.I), 88),
     DiagnosticPattern(re.compile(r"configure:(?: error|.*failed)", re.I), 86),
-    DiagnosticPattern(re.compile(r"(?:^FAIL:|^FAILED\b|Failed test|failed \d+ tests?|Illegal instruction|Segmentation fault|differ: byte)", re.I), 84),
+    DiagnosticPattern(re.compile(r"(?:^FAIL:|^FAILED\b|Failed test|failed \d+ tests?|error: test failed|Illegal instruction|Segmentation fault|differ: byte)", re.I), 84),
     DiagnosticPattern(re.compile(r"(?:reference .*not found in the current environment|makes inconsistent assumptions over library)", re.I), 82),
     DiagnosticPattern(re.compile(r"GCS is required by -z gcs.*lacks the necessary", re.I), 82),
     # Tool wrappers are consequences, not the underlying diagnostic. Keep them as fallbacks
@@ -56,8 +80,37 @@ _PATTERNS = (
 _NON_CAUSAL = (
     re.compile(r"(?:^|[#\s])(?:ERROR|FAIL|XFAIL):\s*0(?:\s|$)", re.I),
     re.compile(r"LaTeX Warning:.*undefined references", re.I),
+    re.compile(r"\.tex:\d+:\s*Warning:\s*Command not found:", re.I),
     re.compile(r"warning: failed to verify signature", re.I),
+    re.compile(r"(?:libtool: link: warning: undefined symbols|configure: WARNING:)", re.I),
     re.compile(r"expected error:", re.I),
+    re.compile(r":\s*note:.*may have been intended to silence earlier diagnostics", re.I),
+    # Released Launchpad logs include complete environment/package inventories and echoed
+    # compiler/Cargo commands. Words such as "error" can occur inside their metadata and
+    # must not outrank the later diagnostic emitted by the command.
+    re.compile(r"^(?:Inherited environment:|Package versions:)", re.I),
+    re.compile(r"^\s*Running [`'](?:CARGO|rustc)=", re.I),
+    re.compile(
+        r"^\s*['\"]?\s*CARGO_PKG_.*(?:\brustc\b.*--error-format|build-script-build)",
+        re.I,
+    ),
+    re.compile(r"^(?:/bin/bash\s+)?(?:\./)?libtool\b.*--mode=(?:compile|link)\b", re.I),
+    re.compile(
+        r"^libtool:\s+(?:compile|link):\s+(?:/\S+/)?"
+        r"(?:cc|c\+\+|gcc|g\+\+|clang|clang\+\+)(?=\s|$)",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*cd\s+\S+\s+&&\s+(?:/\S+/)?"
+        r"(?:cc|c\+\+|gcc|g\+\+|clang|clang\+\+)(?=\s|$)",
+        re.I,
+    ),
+    re.compile(
+        r"^\s*(?:/\S+/)?(?:cc|c\+\+|gcc|g\+\+|clang|clang\+\+)(?=\s|$)\s+"
+        r"(?=.*(?:\s-[DIOWfgm]|\s-o\s))",
+        re.I,
+    ),
+    re.compile(r"^checking (?:for|if|whether)\b", re.I),
 )
 
 _FILE_PATTERNS = (
