@@ -61,6 +61,47 @@ class SyntheticRepairTests(unittest.TestCase):
                 rules.read_text(encoding="utf-8"),
             )
 
+    def test_debian_multiarch_cmake_package_path_uses_target_triplet(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = json.dumps(
+                {
+                    "case_id": "generic-cmake-multiarch-path",
+                    "source_architecture": "x86_64",
+                    "target_architecture": "aarch64",
+                }
+            )
+            log = (
+                "-DDeviceLibs_DIR=/build/lib/x86_64-linux-gnu/cmake/DeviceLibs\n"
+                "CMake Error at CMakeLists.txt:108 (find_package):\n"
+                '  Could not find a package configuration file provided by "DeviceLibs"\n'
+            )
+            repo, _ = make_workspace(root, metadata=metadata, log=log)
+            (repo / "debian").mkdir()
+            rules = repo / "debian" / "rules"
+            rules.write_text(
+                "#!/usr/bin/make -f\n"
+                "override_dh_auto_configure:\n"
+                "\tdh_auto_configure -- "
+                "-DDeviceLibs_DIR=$(CURDIR)/build/lib/x86_64-linux-gnu/cmake/DeviceLibs\n",
+                encoding="utf-8",
+            )
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(
+                outcome.metrics.selected_repair_family,
+                RepairFamily.PACKAGING_RULE.value,
+            )
+            self.assertIn(
+                "$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)",
+                rules.read_text(encoding="utf-8"),
+            )
+
     def test_every_synthetic_case_selects_expected_safe_repair_family(self) -> None:
         case_directories = sorted(path for path in SYNTHETIC_CASES.iterdir() if path.is_dir())
         self.assertEqual(len(case_directories), 16)

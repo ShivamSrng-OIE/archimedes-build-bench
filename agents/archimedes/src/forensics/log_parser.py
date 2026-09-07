@@ -64,7 +64,7 @@ _PATTERNS = (
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol).*(?:atomic|__atomic|__sync)", re.I), 94),
     DiagnosticPattern(re.compile(r"dpkg-gensymbols: error:.*(?:disappeared|symbols file)", re.I), 93),
     DiagnosticPattern(re.compile(r"dpkg-(?:deb|gencontrol): error:", re.I), 93),
-    DiagnosticPattern(re.compile(r"(?:^|\s)CMake Error(?: at|:)", re.I), 92),
+    DiagnosticPattern(re.compile(r"(?:^|\s)CMake Error(?: at|:)", re.I), 98),
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol)", re.I), 90),
     DiagnosticPattern(re.compile(r"(?:cannot find -l|library not found|missing package)", re.I), 88),
     DiagnosticPattern(re.compile(r"configure:(?: error|.*failed)", re.I), 86),
@@ -136,6 +136,7 @@ _FILE_PATTERNS = (
         r":\d+"
     ),
     re.compile(r"(?:python\d*(?:\.\d+)?\s+)(?P<path>[A-Za-z0-9_.+@/-]+\.py)\b"),
+    re.compile(r"CMake Error at (?P<path>[A-Za-z0-9_.+@/-]+):\d+", re.I),
     re.compile(r"(?:cannot|can't) (?:access|stat)\s+['\"‘](?P<path>debian/[^'\"’]+)", re.I),
 )
 

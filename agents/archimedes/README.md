@@ -41,10 +41,15 @@ failure-family classification for every log. Ten logs exceed the two-megabyte co
 the loader now keeps bounded head and tail evidence instead of discarding the terminal failure.
 Forensics suppresses zero-error summaries, echoed commands, environment inventories, warning-only
 probes, and wrapper cascades; it recognizes released Debian/linker/test diagnostics and extracts a
-causal repository path when present. The current audit identified such a path in 103 of 200 logs,
+causal repository path when present. The current audit identified such a path in 106 of 200 logs,
 up from 92 before this parser pass, with none of the selected primaries matching the audited
 false-positive prefixes. Model context includes the causal log window and prioritized Debian
 packaging files. This is parser/context coverage, not verified repair or build success.
+
+The evidence-bounded Debian multiarch planner covers both missing installed paths and CMake package
+directories when the released log itself contains the hard-coded source triplet. Replays on the
+actual `node-re2` and `rocm-llvm` sources each changed only one line in `debian/rules`; neither is
+counted as a repair success without organizer-equivalent target validation.
 
 ## System architecture
 

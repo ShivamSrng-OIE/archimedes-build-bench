@@ -226,6 +226,16 @@ class ForensicsArchitectureTests(unittest.TestCase):
         self.assertTrue(analysis.primary_diagnostic.startswith("dpkg-deb: error:"))
         self.assertEqual(analysis.frontier.stage, FrontierStage.PACKAGE)
 
+    def test_release_log_selects_cmake_package_error_and_file(self) -> None:
+        analysis = analyze_build_log(
+            "CMake Error at CMakeLists.txt:108 (find_package):\n"
+            '  Could not find a package configuration file provided by "DeviceLibs"\n'
+            "dh_auto_configure: error: cmake returned exit code 1\n"
+        )
+        self.assertTrue(analysis.primary_diagnostic.startswith("CMake Error at"))
+        self.assertEqual(analysis.frontier.stage, FrontierStage.CONFIGURE)
+        self.assertEqual(analysis.frontier.primary_file, "CMakeLists.txt")
+
     def test_release_log_ignores_compiler_note_after_link_failure(self) -> None:
         analysis = analyze_build_log(
             "/usr/src/pkg/source.cpp:227:(.text+0xebd0): undefined reference to "

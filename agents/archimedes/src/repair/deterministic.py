@@ -67,7 +67,17 @@ def _debian_multiarch_path(
         log,
         re.I,
     )
-    if missing_path is None:
+    missing_cmake_package = re.search(
+        r"CMake Error at .*?\(find_package\):.*?Could not find a package "
+        r"configuration file provided by",
+        log,
+        re.I | re.S,
+    ) and re.search(
+        rf"-D[A-Za-z0-9_]+_DIR=\S*{re.escape(source_triplet)}\S*",
+        log,
+        re.I,
+    )
+    if missing_path is None and missing_cmake_package is None:
         return None
     matches: list[tuple[str, str]] = []
     for path, text in files:
