@@ -102,6 +102,89 @@ class SyntheticRepairTests(unittest.TestCase):
                 rules.read_text(encoding="utf-8"),
             )
 
+    def test_debian_multiarch_install_manifests_require_compat_13_and_log_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = json.dumps(
+                {
+                    "case_id": "generic-install-multiarch-paths",
+                    "source_architecture": "x86_64",
+                    "target_architecture": "aarch64",
+                }
+            )
+            first = "usr/lib/x86_64-linux-gnu/plugins"
+            second = "usr/lib/x86_64-linux-gnu/libdemo.so.*"
+            log = (
+                f'dh_install: warning: Cannot find (any matches for) "{first}"\n'
+                f'dh_install: warning: Cannot find (any matches for) "{second}"\n'
+                "dh_install: error: missing files, aborting\n"
+            )
+            repo, _ = make_workspace(root, metadata=metadata, log=log)
+            (repo / "debian").mkdir()
+            (repo / "debian" / "control").write_text(
+                "Source: demo\nBuild-Depends: debhelper-compat (= 13)\n",
+                encoding="utf-8",
+            )
+            first_manifest = repo / "debian" / "demo.install"
+            second_manifest = repo / "debian" / "libdemo.install"
+            unobserved_manifest = repo / "debian" / "dev.install"
+            first_manifest.write_text(first + "\n", encoding="utf-8")
+            second_manifest.write_text(second + "\n", encoding="utf-8")
+            unobserved_manifest.write_text(
+                "usr/lib/x86_64-linux-gnu/libdemo.a\n", encoding="utf-8"
+            )
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(
+                outcome.metrics.selected_repair_family,
+                RepairFamily.PACKAGING_RULE.value,
+            )
+            self.assertEqual(
+                set(outcome.result.modified_paths),
+                {"debian/demo.install", "debian/libdemo.install"},
+            )
+            self.assertIn("${DEB_HOST_MULTIARCH}", first_manifest.read_text(encoding="utf-8"))
+            self.assertIn("${DEB_HOST_MULTIARCH}", second_manifest.read_text(encoding="utf-8"))
+            self.assertIn("x86_64-linux-gnu", unobserved_manifest.read_text(encoding="utf-8"))
+
+    def test_debian_multiarch_install_manifest_is_not_rewritten_before_compat_13(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = json.dumps(
+                {
+                    "case_id": "legacy-install-multiarch-path",
+                    "source_architecture": "x86_64",
+                    "target_architecture": "aarch64",
+                }
+            )
+            token = "usr/lib/x86_64-linux-gnu/plugins"
+            repo, _ = make_workspace(
+                root,
+                metadata=metadata,
+                log=f'dh_install: Cannot find (any matches for) "{token}"\n',
+            )
+            (repo / "debian").mkdir()
+            (repo / "debian" / "control").write_text(
+                "Source: demo\nBuild-Depends: debhelper-compat (= 12)\n",
+                encoding="utf-8",
+            )
+            manifest = repo / "debian" / "demo.install"
+            manifest.write_text(token + "\n", encoding="utf-8")
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(outcome.result.modified_paths, [])
+            self.assertIn("x86_64-linux-gnu", manifest.read_text(encoding="utf-8"))
+
     def test_every_synthetic_case_selects_expected_safe_repair_family(self) -> None:
         case_directories = sorted(path for path in SYNTHETIC_CASES.iterdir() if path.is_dir())
         self.assertEqual(len(case_directories), 16)

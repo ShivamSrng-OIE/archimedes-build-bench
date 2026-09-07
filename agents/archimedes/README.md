@@ -46,10 +46,12 @@ up from 92 before this parser pass, with none of the selected primaries matching
 false-positive prefixes. Model context includes the causal log window and prioritized Debian
 packaging files. This is parser/context coverage, not verified repair or build success.
 
-The evidence-bounded Debian multiarch planner covers both missing installed paths and CMake package
-directories when the released log itself contains the hard-coded source triplet. Replays on the
-actual `node-re2` and `rocm-llvm` sources each changed only one line in `debian/rules`; neither is
-counted as a repair success without organizer-equivalent target validation.
+The evidence-bounded Debian multiarch planner covers missing installed paths and CMake package
+directories when the released log itself contains the hard-coded source triplet. For `.install`
+manifests it additionally requires declared debhelper compat 13 or later and edits only tokens
+repeated verbatim in the failure log. Replays on the actual `node-re2`, `rocm-llvm`, and
+`buteo-sync-plugins` sources made only those guarded edits; none is counted as a repair success
+without organizer-equivalent target validation.
 
 ## System architecture
 

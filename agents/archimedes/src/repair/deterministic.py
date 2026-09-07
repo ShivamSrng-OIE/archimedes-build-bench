@@ -62,8 +62,9 @@ def _debian_multiarch_path(
     if not source_triplet or not target_triplet or source_triplet == target_triplet:
         return None
     missing_path = re.search(
-        rf"(?:cannot|can't) (?:access|stat).*{re.escape(source_triplet)}.*"
-        r"(?:no such file|not found)",
+        rf"(?:(?:cannot|can't) (?:access|stat).*{re.escape(source_triplet)}.*"
+        rf"(?:no such file|not found)|cannot find \(any matches for\).*"
+        rf"{re.escape(source_triplet)})",
         log,
         re.I,
     )
@@ -79,27 +80,67 @@ def _debian_multiarch_path(
     )
     if missing_path is None and missing_cmake_package is None:
         return None
-    matches: list[tuple[str, str]] = []
+    rules_matches: list[tuple[str, str]] = []
     for path, text in files:
         if path != "debian/rules":
             continue
         for line in text.splitlines():
             if source_triplet in line:
-                matches.append((path, line))
-    if len(matches) != 1:
+                rules_matches.append((path, line))
+    if len(rules_matches) == 1 and (missing_path is not None or missing_cmake_package is not None):
+        path, expected = rules_matches[0]
+        replacement = expected.replace(
+            source_triplet, "$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)"
+        )
+        rationale = (
+            "derive the Debian multiarch directory from the target build architecture instead of "
+            f"hard-coding the source architecture triplet {source_triplet}"
+        )
+        return DeterministicMatch(
+            RepairFamily.PACKAGING_RULE,
+            rationale,
+            (_edit(path, expected, replacement, rationale),),
+            confidence=0.97,
+            risk=0.03,
+        )
+
+    file_map = dict(files)
+    control = file_map.get("debian/control", "")
+    compat_match = re.search(r"debhelper-compat\s*\(=\s*(\d+)\s*\)", control, re.I)
+    compat = int(compat_match.group(1)) if compat_match else 0
+    legacy_compat = file_map.get("debian/compat", "").strip()
+    if not compat and legacy_compat.isdigit():
+        compat = int(legacy_compat)
+    if compat < 13:
         return None
-    path, expected = matches[0]
-    replacement = expected.replace(
-        source_triplet, "$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)"
-    )
+
+    manifest_matches: list[tuple[str, str]] = []
+    for path, text in files:
+        if not path.startswith("debian/") or not path.endswith(".install"):
+            continue
+        for line in text.splitlines():
+            token = line.strip()
+            if source_triplet in token and token in log:
+                manifest_matches.append((path, line))
+    if not manifest_matches:
+        return None
     rationale = (
-        "derive the Debian multiarch directory from the target build architecture instead of "
-        f"hard-coding the source architecture triplet {source_triplet}"
+        "use debhelper's compat-13 target multiarch substitution for install paths that the "
+        "failure log explicitly reports missing"
+    )
+    edits = tuple(
+        _edit(
+            path,
+            expected,
+            expected.replace(source_triplet, "${DEB_HOST_MULTIARCH}"),
+            rationale,
+        )
+        for path, expected in manifest_matches
     )
     return DeterministicMatch(
         RepairFamily.PACKAGING_RULE,
         rationale,
-        (_edit(path, expected, replacement, rationale),),
+        edits,
         confidence=0.97,
         risk=0.03,
     )

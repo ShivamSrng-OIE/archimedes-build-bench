@@ -23,11 +23,11 @@ the participant supplied for their own version.
 | `rules.html` | LLM foundation model; no Case-specific answers, hidden material, build bypass, sandbox/evaluator access, or undeclared intervention; reproducibility disclosure required. | Case-specific example path was previously removed; path/policy critics and disclosure exist. Real-model delivery remains unresolved and is a Full Evaluation blocker. |
 | `timeline.html` | Public development and validation are listed as open on 7 September; final Agent selection is 13 November; results are due by 20 November. | Public resources were refreshed, but the live rules still contain pending parameters after the scheduled freeze. Recheck before evaluation. |
 | `faq.html` | No custom Docker in rc.2; no current `bb-build`; no secrets; Smoke Test is qualification only; separate versioned Case sets. | Managed runtime retained; `BbBuildFeedbackProvider` remains fail-closed; qualification is not represented as an official score. |
-| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.7. No dataset content is bundled. |
+| `data-downloads.html` | Starter Kit rc.2 remains current; Development Cases v0.1 were regenerated for the public phase; protocol schemas and runtime images remain pending. | Current release digest verified. Dataset-informed parser, context, and repair changes are versioned as v0.2.8. No dataset content is bundled. |
 | `register.html` | Captain account, accurate 1-5 member roster, unique Team name, optional unique institutional email, acceptance of rules. | Team registration is proven indirectly by the participant's authenticated qualified submission; roster accuracy remains a participant responsibility. |
 | `login.html` | Captain signs in to manage Team and submissions. | No codebase impact. Credentials are never stored in the repository. |
 | `team.html` | Team name is public leaderboard identity; registration/roster is maintained in the portal. | Participant action only; no Agent-bundle impact. |
-| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.2 is qualified under submission `20260901T004910Z-0a48b255`; current source changes are versioned as v0.2.7. |
+| `my-submissions.html` | Upload creates immutable versions; static checks and Smoke Test qualify a version; Full Evaluation requires an explicit later action. | v0.2.2 is qualified under submission `20260901T004910Z-0a48b255`; current source changes are versioned as v0.2.8. |
 | `evaluation-detail.html` | Evaluation advances through queued, preparing, evaluating, finalizing, completed; score appears only after finalization. | No Full Evaluation is documented for this candidate; current platform health reports Full Evaluation disabled. |
 | `leaderboard.html` | Hosted Smoke Tests do not affect ranking; only compatible organizer-published Full Evaluations are compared; Build Success Rate is primary. | No score claim is made from the 1/1 Smoke Test or public-log parser audit. |
 | `contact.html` | Official support email is `buildbench-challenge@googlegroups.com`. | Recorded in the submission checklist for unresolved policy questions. |
@@ -86,11 +86,13 @@ from 92 before the second release-driven parser pass. No selected primary matche
 of known command/inventory/warning-only false-positive prefixes. These are parser/context coverage
 results only and cannot be compared with Verified Build Success Rate.
 
-Actual-source replays of released cases `node-re2` and `rocm-llvm` selected the generic Debian
-multiarch repair. Each changed only `debian/rules`, replacing one hard-coded source triplet with
-the target value obtained from `dpkg-architecture`; the latter fixed a CMake package-directory
-argument whose source-architecture path was explicitly present in the failure log. Both edits
-passed the Agent's confidence, portability, policy, and atomic-edit gates without model calls. No
+Actual-source replays of released cases `node-re2`, `rocm-llvm`, and `buteo-sync-plugins` selected
+generic Debian multiarch repairs. The first two each changed one line in `debian/rules`, replacing a
+hard-coded source triplet with the target value obtained from `dpkg-architecture`; `rocm-llvm` fixed
+a CMake package-directory argument explicitly present in the failure log. The third case declares
+debhelper compat 13 and changed only the two `.install` tokens named missing by the log to use
+`${DEB_HOST_MULTIARCH}`; an unobserved hard-coded token was left untouched. All edits passed the
+Agent's confidence, portability, policy, and atomic-edit gates without model calls. No
 organizer-equivalent target build was available, so these are candidate-selection evidence, not
 verified repair successes.
 
@@ -161,4 +163,4 @@ update.
    organizer-compatible real-model smoke run.
 3. Wait for Full Evaluation readiness and frozen operational limits.
 4. Decide whether to preserve qualified v0.2.2 for the first Full Evaluation or upload and qualify
-   v0.2.7 after the dataset-informed changes and full readiness checks.
+   v0.2.8 after the dataset-informed changes and full readiness checks.

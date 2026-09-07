@@ -47,9 +47,9 @@ Hosted Smoke Test contract. It does **not** prove repair performance on the publ
 compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
 evaluation.
 
-Source development now targets Archimedes `0.2.7`. Any source, manifest, dependency, or configuration
+Source development now targets Archimedes `0.2.8`. Any source, manifest, dependency, or configuration
 change after the qualified `0.2.2` upload requires a new immutable upload. Never describe local
-`0.2.7` results as results of submission `20260901T004910Z-0a48b255`.
+`0.2.8` results as results of submission `20260901T004910Z-0a48b255`.
 
 ## Current platform and release state
 
@@ -100,7 +100,7 @@ Record for the evaluated immutable version:
 ## Public Development Cases v0.1
 
 The public archive contains case metadata using `schema_version: buildbench.case.v0.1`, with
-architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.7`
+architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.8`
 accepts this shape as well as the existing flat Starter Kit task shape. This version also
 retains the tail of oversized logs, ranks concrete Debian/linker/test failures ahead of wrapper
 errors and echoed commands, extracts causal repository paths, and prioritizes Debian packaging
@@ -116,10 +116,11 @@ filesystem for complete materialization. Static analysis of all 200 released fai
 a non-empty diagnostic and recognized family for every log, including ten logs over two megabytes;
 106 logs now yield a repository-path candidate and no selected primary matches the audited set of
 known command/inventory/warning-only false-positive prefixes.
-Two actual-source replays selected and applied the generic multiarch-path repair to `node-re2` and
-`rocm-llvm`, each changing only `debian/rules` and requiring no model call. These are integrity,
-ingestion, and candidate-selection results—not
-Verified Build Success Rate, because organizer-equivalent target builds were not run.
+Three actual-source replays selected generic multiarch-path repairs for `node-re2`, `rocm-llvm`, and
+`buteo-sync-plugins` without model calls. The first two each changed only `debian/rules`; the third
+changed only two failure-log-proven `.install` tokens under its declared debhelper compat 13. These
+are integrity, ingestion, and candidate-selection results—not Verified Build Success Rate, because
+organizer-equivalent target builds were not run.
 
 ## Build and package a new candidate
 
