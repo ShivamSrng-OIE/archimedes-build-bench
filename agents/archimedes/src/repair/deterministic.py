@@ -21,11 +21,13 @@ class DeterministicMatch:
 def _text_files(repo: Path) -> list[tuple[str, str]]:
     files: list[tuple[str, str]] = []
     for path in sorted(repo.rglob("*")):
-        if len(files) >= 20_000 or path.is_symlink() or not path.is_file():
+        if len(files) >= 20_000:
             continue
         if any(part in {".git", ".hg", ".svn", "__pycache__", "node_modules"} for part in path.parts):
             continue
         try:
+            if path.is_symlink() or not path.is_file():
+                continue
             data = path.read_bytes()
         except OSError:
             continue

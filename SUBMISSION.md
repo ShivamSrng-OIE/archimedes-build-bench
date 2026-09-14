@@ -71,6 +71,18 @@ The official local `bb ready` orchestration is still blocked before testing by t
 asset-availability limitation. The organizer-hosted pipeline supplied those assets and qualified
 the exact immutable v0.2.9 archive successfully.
 
+## Development Validation candidate
+
+Agent `0.2.10` is a local successor candidate prepared for the organizer's public Development
+Validation channel. It makes repository inventory, regex search, architecture-hazard scanning, and
+deterministic source scanning tolerate filesystem entries that cannot be inspected safely. The
+change was prompted by four released source packages whose extracted links are inaccessible through
+the Windows/WSL filesystem bridge. The corresponding replay failures all complete after the fix.
+
+This candidate is not the immutable qualified `0.2.9` submission and has not yet passed an
+organizer target-architecture build. Its Worktree Bundle and server results must be recorded before
+any repair-success claim or replacement Agent upload.
+
 ## Current platform and release state
 
 At the audit time:

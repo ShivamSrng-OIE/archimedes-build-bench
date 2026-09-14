@@ -44,7 +44,12 @@ def inventory_repository(repo: Path, *, max_files: int = 20_000) -> RepositoryIn
     for path in sorted(repo.rglob("*")):
         if len(inventory.files) >= max_files:
             break
-        if any(part in _SKIP for part in path.parts) or path.is_symlink() or not path.is_file():
+        if any(part in _SKIP for part in path.parts):
+            continue
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+        except OSError:
             continue
         relative = path.relative_to(repo).as_posix()
         inventory.files.append(relative)
@@ -76,9 +81,11 @@ def search_regex(
     for path in sorted(repo.rglob("*")):
         if len(results) >= max_results:
             break
-        if path.is_symlink() or not path.is_file() or any(part in _SKIP for part in path.parts):
+        if any(part in _SKIP for part in path.parts):
             continue
         try:
+            if path.is_symlink() or not path.is_file():
+                continue
             if path.stat().st_size > MAX_TEXT_FILE_BYTES:
                 continue
             data = path.read_bytes()

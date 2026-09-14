@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.architecture.aliases import normalize_architecture
 from src.architecture.familiarity import assess_familiarity
@@ -10,6 +11,7 @@ from src.architecture.hazard_scanner import scan_architecture_hazards
 from src.architecture.profile import construct_profile
 from src.architecture.hazard_scanner import ArchitectureHazard
 from src.architecture.semantic_anchor import extract_anchor, validate_anchor
+from src.context.repository_search import inventory_repository, search_regex
 from src.forensics.error_signature import normalize_error_signature
 from src.forensics.frontier import FrontierMovement, compare_frontiers
 from src.forensics.log_parser import analyze_build_log, identify_primary_file, normalize_log
@@ -17,6 +19,28 @@ from src.schemas import Architecture, FailureFrontier, FrontierStage, SemanticAn
 
 
 class ForensicsArchitectureTests(unittest.TestCase):
+    def test_repository_scans_skip_inaccessible_directory_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            (repo / "good.c").write_text("int x86_portable;\n", encoding="utf-8")
+            inaccessible = repo / "inaccessible"
+            inaccessible.write_text("-march=native\n", encoding="utf-8")
+            original_is_file = Path.is_file
+
+            def selective_is_file(path: Path) -> bool:
+                if path.name == "inaccessible":
+                    raise OSError("simulated inaccessible entry")
+                return original_is_file(path)
+
+            with patch.object(Path, "is_file", selective_is_file):
+                inventory = inventory_repository(repo)
+                hazards = scan_architecture_hazards(repo)
+                snippets = search_regex(repo, "x86_portable")
+
+            self.assertEqual(inventory.files, ["good.c"])
+            self.assertEqual(hazards, [])
+            self.assertEqual([snippet.path for snippet in snippets], ["good.c"])
+
     def test_architecture_aliases_and_unknown_raw_value(self) -> None:
         self.assertEqual(normalize_architecture("AMD64").canonical, Architecture.X86_64)
         self.assertEqual(normalize_architecture("arm64").canonical, Architecture.AARCH64)

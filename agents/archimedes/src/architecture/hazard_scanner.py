@@ -41,9 +41,11 @@ def scan_architecture_hazards(repo: Path, *, max_results: int = 300) -> list[Arc
     for path in sorted(repo.rglob("*")):
         if len(hazards) >= max_results:
             break
-        if not path.is_file() or any(part in _SKIP_PARTS for part in path.parts):
+        if any(part in _SKIP_PARTS for part in path.parts):
             continue
         try:
+            if not path.is_file():
+                continue
             if path.stat().st_size > MAX_TEXT_FILE_BYTES:
                 continue
             data = path.read_bytes()

@@ -36,6 +36,13 @@ archive under the same `v0.1` label, so the digest—not the label alone—is th
 All 1,510 checksummed members were verified directly from the ZIP. Five Debian epoch filenames use
 colons and therefore require Linux extraction rather than a Windows filesystem.
 
+The organizer's Development Validation channel accepts complete final public-Case worktrees, not
+the Agent submission ZIP. `dev/replay_development_cases.py` unpacks released Debian source packages,
+constructs the documented workspace layout, invokes this Agent with an explicit Python runtime, and
+preserves every final worktree plus a content-pinned replay summary. It performs no package builds;
+only the organizer service can establish target-architecture build success. The replay scanner skips
+filesystem entries that cannot be safely inspected instead of aborting the entire Case.
+
 A 7 September audit of all 200 current failure logs found a non-empty diagnostic and deterministic
 failure-family classification for every log. Ten logs exceed the two-megabyte context budget, so
 the loader now keeps bounded head and tail evidence instead of discarding the terminal failure.

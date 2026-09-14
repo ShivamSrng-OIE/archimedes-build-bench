@@ -6,6 +6,25 @@ inline assembly, fallback selection, atomic linkage, ABI width, endianness, pack
 generated configuration, multi-file consistency, artifact paths, intrinsics, feature detection, and
 an unfamiliar OOD target.
 
+`replay_development_cases.py` prepares complete final worktrees from the released public Debian
+source packages. On Windows it uses an unprivileged, workspace-local extraction of `dpkg-dev` and
+`libdpkg-perl` through the `Ubuntu` WSL distribution; `.bz2` sources additionally need the local
+`bzip2` and `libbz2-1.0` packages. These tools live under ignored `runs/tools/` and are never part of
+the Agent submission or a Worktree Bundle. After extracting those packages into
+`runs/tools/dpkg-dev/root`, run:
+
+```text
+python dev/replay_development_cases.py \
+  --dataset-root runs/d1/buildbench-development-cases-v0.1 \
+  --output-root runs/development-replay \
+  --python C:\path\to\python3.11.exe \
+  --case CASE_ID
+```
+
+Omit `--case` to replay all 200 Cases. A replay means the Agent completed and a final worktree was
+preserved; it does not mean the package builds. Only the organizer's Development Validation service
+provides target-architecture build evidence.
+
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
 when comparing configurations. Change only one component for an ablation. The default runner does
 not execute package builds, so `verified_build_success` stays null; causal-location and repair-family
