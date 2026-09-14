@@ -25,6 +25,18 @@ Omit `--case` to replay all 200 Cases. A replay means the Agent completed and a 
 preserved; it does not mean the package builds. Only the organizer's Development Validation service
 provides target-architecture build evidence.
 
+Create a deterministic Development Validation Worktree Bundle from one frozen replay with:
+
+```text
+python dev/package_worktree_bundle.py \
+  --replay-root runs/development-validation-candidates-v0210-a847c1d \
+  --output dist/buildbench-development-worktrees-v0.2.10-a847c1d.zip
+```
+
+The packager fails closed on incomplete Cases, duplicate Case IDs, symlinks, and non-regular files.
+It includes only `manifest.json` and the complete final worktree for each replayed Case. This bundle
+is for Development Validation; it is distinct from `dist/agent-submission.zip`.
+
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
 when comparing configurations. Change only one component for an ablation. The default runner does
 not execute package builds, so `verified_build_success` stays null; causal-location and repair-family
