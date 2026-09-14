@@ -74,6 +74,7 @@ workspace = Path(os.environ["BB_WORKSPACE"])
 
             self.assertEqual(result.status, "completed")
             self.assertEqual(result.modified_paths, ("hello.txt",))
+            self.assertEqual(result.actual_modified_paths, ("hello.txt",))
             self.assertEqual(
                 (output / "cases/case-1/work/repo/hello.txt").read_text(encoding="utf-8"),
                 "after\n",

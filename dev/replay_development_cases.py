@@ -29,6 +29,7 @@ class ReplayResult:
     agent_exit_code: int | None
     elapsed_seconds: float
     modified_paths: tuple[str, ...]
+    actual_modified_paths: tuple[str, ...]
     error: str | None = None
 
 
@@ -45,6 +46,18 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _regular_file_hashes(root: Path) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for path in sorted(root.rglob("*")):
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            hashes[path.relative_to(root).as_posix()] = _sha256(path)
+        except OSError:
+            continue
+    return hashes
 
 
 def _wsl_path(path: Path) -> str:
@@ -162,6 +175,8 @@ def replay_case(
 
     try:
         _prepare_workspace(case_dir, destination, dpkg_source_root)
+        repo_dir = destination / "work" / "repo"
+        original_hashes = _regular_file_hashes(repo_dir)
         environment = os.environ.copy()
         environment.update(
             {
@@ -192,6 +207,7 @@ def replay_case(
                 completed.returncode,
                 round(time.monotonic() - started, 3),
                 (),
+                (),
                 f"agent exited with code {completed.returncode}",
             )
         if not result_path.is_file():
@@ -202,12 +218,32 @@ def replay_case(
                 completed.returncode,
                 round(time.monotonic() - started, 3),
                 (),
+                (),
                 "agent-result.json is missing",
             )
         result = _json_object(result_path)
         modified = result.get("modified_paths", [])
         modified_paths = tuple(str(item) for item in modified) if isinstance(modified, list) else ()
+        final_hashes = _regular_file_hashes(repo_dir)
+        actual_modified_paths = tuple(
+            sorted(
+                path
+                for path in original_hashes.keys() | final_hashes.keys()
+                if original_hashes.get(path) != final_hashes.get(path)
+            )
+        )
         status = str(result.get("status", "unknown"))
+        if status == "completed" and tuple(sorted(modified_paths)) != actual_modified_paths:
+            return ReplayResult(
+                case_id,
+                direction,
+                "result_mismatch",
+                completed.returncode,
+                round(time.monotonic() - started, 3),
+                modified_paths,
+                actual_modified_paths,
+                "agent-result modified_paths do not match the final worktree",
+            )
         return ReplayResult(
             case_id,
             direction,
@@ -215,6 +251,7 @@ def replay_case(
             completed.returncode,
             round(time.monotonic() - started, 3),
             modified_paths,
+            actual_modified_paths,
         )
     except subprocess.TimeoutExpired:
         return ReplayResult(
@@ -223,6 +260,7 @@ def replay_case(
             "timeout",
             None,
             round(time.monotonic() - started, 3),
+            (),
             (),
             f"agent exceeded {timeout_seconds:g} seconds",
         )
@@ -233,6 +271,7 @@ def replay_case(
             "preparation_error",
             None,
             round(time.monotonic() - started, 3),
+            (),
             (),
             f"{type(error).__name__}: {error}",
         )
@@ -260,7 +299,7 @@ def write_summary(
         "python": str(python),
         "case_count": len(ordered),
         "completed_count": sum(item.status == "completed" for item in ordered),
-        "modified_case_count": sum(bool(item.modified_paths) for item in ordered),
+        "modified_case_count": sum(bool(item.actual_modified_paths) for item in ordered),
         "results": [asdict(item) for item in ordered],
     }
     (output_root / "replay-summary.json").write_text(
@@ -343,7 +382,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     failures = [result for result in results if result.status != "completed"]
     print(
         f"Completed {len(results) - len(failures)}/{len(results)} Cases; "
-        f"modified {sum(bool(result.modified_paths) for result in results)} worktrees."
+        f"modified {sum(bool(result.actual_modified_paths) for result in results)} worktrees."
     )
     return 1 if failures else 0
 
