@@ -14,6 +14,15 @@ from pathlib import Path, PurePosixPath
 SCHEMA_VERSION = "0.1"
 SUITE_ID = "development-recommended-v1"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
+REPOSITORY_METADATA_NAMES = {
+    ".bzr",
+    ".fslckout",
+    ".hg",
+    ".pc",
+    ".svn",
+    "CVS",
+    "_darcs",
+}
 
 
 def _sha256(path: Path) -> str:
@@ -41,21 +50,33 @@ def _case_ids(replay_root: Path) -> list[str]:
     return sorted(ids)
 
 
+def _is_repository_metadata(relative_path: Path) -> bool:
+    return any(
+        part.startswith(".git") or part in REPOSITORY_METADATA_NAMES
+        for part in relative_path.parts
+    )
+
+
 def _repo_files(repo: Path) -> list[Path]:
     if not repo.is_dir():
         raise ValueError(f"missing final worktree: {repo}")
     files: list[Path] = []
     for root, dirs, names in os.walk(repo, followlinks=False):
         root_path = Path(root)
+        retained_dirs: list[str] = []
         for name in sorted(dirs):
             path = root_path / name
             if path.is_symlink():
                 raise ValueError(f"symlinks are not allowed: {path}")
+            if not _is_repository_metadata(path.relative_to(repo)):
+                retained_dirs.append(name)
+        dirs[:] = retained_dirs
         for name in sorted(names):
             path = root_path / name
             if path.is_symlink() or not path.is_file():
                 raise ValueError(f"non-regular files are not allowed: {path}")
-            files.append(path)
+            if not _is_repository_metadata(path.relative_to(repo)):
+                files.append(path)
     return sorted(files, key=lambda path: path.relative_to(repo).as_posix())
 
 

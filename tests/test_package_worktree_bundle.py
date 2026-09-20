@@ -18,6 +18,20 @@ class WorktreeBundleTests(unittest.TestCase):
             repo = replay / "cases" / case_id / "work" / "repo"
             repo.mkdir(parents=True)
             (repo / "README").write_text("hello\n", encoding="utf-8")
+            (repo / ".gitignore").write_text("build/\n", encoding="utf-8")
+            (repo / ".gitmodules").write_text("[submodule]\n", encoding="utf-8")
+            (repo / ".github" / "workflows").mkdir(parents=True)
+            (repo / ".github" / "workflows" / "ci.yml").write_text(
+                "name: CI\n", encoding="utf-8"
+            )
+            (repo / ".pc" / "applied-patches").parent.mkdir(parents=True)
+            (repo / ".pc" / "applied-patches").write_text("fix.patch\n", encoding="utf-8")
+            (repo / ".svn").mkdir()
+            (repo / ".svn" / "entries").write_text("metadata\n", encoding="utf-8")
+            (repo / "install-artifact-from-github").mkdir()
+            (repo / "install-artifact-from-github" / "index.js").write_text(
+                "module.exports = {};\n", encoding="utf-8"
+            )
             (replay / "replay-summary.json").write_text(
                 json.dumps({"cases": [{"case_id": case_id, "status": "completed"}]}),
                 encoding="utf-8",
@@ -32,7 +46,11 @@ class WorktreeBundleTests(unittest.TestCase):
             with zipfile.ZipFile(first) as archive:
                 self.assertEqual(
                     archive.namelist(),
-                    ["manifest.json", "cases/case-a/worktree/input/README"],
+                    [
+                        "manifest.json",
+                        "cases/case-a/worktree/input/README",
+                        "cases/case-a/worktree/input/install-artifact-from-github/index.js",
+                    ],
                 )
                 manifest = json.loads(archive.read("manifest.json"))
             self.assertEqual(

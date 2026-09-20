@@ -34,6 +34,8 @@ python dev/package_worktree_bundle.py \
 ```
 
 The packager fails closed on incomplete Cases, duplicate Case IDs, symlinks, and non-regular files.
+It omits version-control and quilt state such as `.git*`, `.hg`, `.svn`, and `.pc`, which are
+repository metadata rather than package source and are rejected by the validation service.
 It follows the live portal contract exactly: a root `manifest.json` using schema `0.1` and suite
 `development-recommended-v1`, plus each complete repaired package source tree under
 `cases/<case-id>/worktree/input/`. It does not add Case-level manifests or platform metadata. This
