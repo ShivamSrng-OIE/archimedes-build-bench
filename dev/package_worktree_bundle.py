@@ -11,7 +11,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 
-SCHEMA_VERSION = "buildbench.worktree-bundle.v0.1"
+SCHEMA_VERSION = "0.1"
+SUITE_ID = "development-recommended-v1"
 FIXED_ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
 
@@ -64,21 +65,20 @@ def create_bundle(replay_root: Path, output: Path) -> dict[str, object]:
     manifest_cases: list[dict[str, object]] = []
     for case_id in case_ids:
         repo = replay_root / "cases" / case_id / "work" / "repo"
-        prefix = PurePosixPath("cases") / case_id / "worktree"
+        worktree = PurePosixPath("cases") / case_id / "worktree"
+        prefix = worktree / "input"
         files = _repo_files(repo)
         manifest_cases.append(
             {
                 "case_id": case_id,
-                "worktree_path": prefix.as_posix(),
-                "file_count": len(files),
+                "worktree": worktree.as_posix(),
             }
         )
         entries.extend((prefix / path.relative_to(repo).as_posix(), path) for path in files)
 
     manifest: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
-        "dataset": "buildbench-development-cases-v0.1",
-        "case_count": len(manifest_cases),
+        "suite_id": SUITE_ID,
         "cases": manifest_cases,
     }
     manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")

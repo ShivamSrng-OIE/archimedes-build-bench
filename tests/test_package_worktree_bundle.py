@@ -32,11 +32,19 @@ class WorktreeBundleTests(unittest.TestCase):
             with zipfile.ZipFile(first) as archive:
                 self.assertEqual(
                     archive.namelist(),
-                    ["manifest.json", "cases/case-a/worktree/README"],
+                    ["manifest.json", "cases/case-a/worktree/input/README"],
                 )
                 manifest = json.loads(archive.read("manifest.json"))
-            self.assertEqual(manifest["case_count"], 1)
-            self.assertEqual(manifest["cases"][0]["worktree_path"], "cases/case-a/worktree")
+            self.assertEqual(
+                set(manifest),
+                {"schema_version", "suite_id", "cases"},
+            )
+            self.assertEqual(manifest["schema_version"], "0.1")
+            self.assertEqual(manifest["suite_id"], "development-recommended-v1")
+            self.assertEqual(
+                manifest["cases"],
+                [{"case_id": "case-a", "worktree": "cases/case-a/worktree"}],
+            )
 
     def test_rejects_incomplete_replay(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

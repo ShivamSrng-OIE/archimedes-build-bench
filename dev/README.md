@@ -34,8 +34,10 @@ python dev/package_worktree_bundle.py \
 ```
 
 The packager fails closed on incomplete Cases, duplicate Case IDs, symlinks, and non-regular files.
-It includes only `manifest.json` and the complete final worktree for each replayed Case. This bundle
-is for Development Validation; it is distinct from `dist/agent-submission.zip`.
+It follows the live portal contract exactly: a root `manifest.json` using schema `0.1` and suite
+`development-recommended-v1`, plus each complete repaired package source tree under
+`cases/<case-id>/worktree/input/`. It does not add Case-level manifests or platform metadata. This
+bundle is for Development Validation; it is distinct from `dist/agent-submission.zip`.
 
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
 when comparing configurations. Change only one component for an ablation. The default runner does
