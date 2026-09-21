@@ -51,6 +51,62 @@ def _edit(path: str, expected: str, replacement: str, rationale: str) -> Planned
     )
 
 
+def _amd_comgr_unsigned_device_lib_id(
+    files: list[tuple[str, str]], case: CaseData
+) -> tuple[PlannedEdit, ...]:
+    """Backport the complete upstream COMGR fix for target-dependent plain char."""
+    if (
+        case.source_architecture.canonical is not Architecture.X86_64
+        or case.target_architecture.canonical
+        not in {Architecture.AARCH64, Architecture.RISCV64}
+    ):
+        return ()
+
+    file_map = dict(files)
+    replacements = (
+        (
+            "amd/comgr/cmake/device-libs-id.py",
+            "    digest_char = [e if e < 128 else e-256 for e in digest_uchar]\n"
+            "    digest_elts = \", \".join(map(str, digest_char))\n"
+            "    print(f\"static const char {args.varname}[] = "
+            "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))",
+            "    digest_elts = \", \".join(map(str, digest_uchar))\n"
+            "    print(f\"static const unsigned char {args.varname}[] = "
+            "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))",
+        ),
+        (
+            "amd/comgr/src/comgr-cache-command.cpp",
+            "  addString(H, getDeviceLibrariesIdentifier());",
+            "  H.update(getDeviceLibrariesIdentifier());",
+        ),
+        (
+            "amd/comgr/src/comgr-device-libs.cpp",
+            "StringRef getDeviceLibrariesIdentifier() { return DEVICE_LIBS_ID; }",
+            "ArrayRef<unsigned char> getDeviceLibrariesIdentifier() { return DEVICE_LIBS_ID; }",
+        ),
+        (
+            "amd/comgr/src/comgr-device-libs.h",
+            "llvm::StringRef getDeviceLibrariesIdentifier();",
+            "llvm::ArrayRef<unsigned char> getDeviceLibrariesIdentifier();",
+        ),
+    )
+    if any(
+        path not in file_map
+        or file_map[path].replace("\r\n", "\n").replace("\r", "\n").count(expected) != 1
+        for path, expected, _ in replacements
+    ):
+        return ()
+
+    rationale = (
+        "backport the complete upstream COMGR unsigned-byte identifier change so SHA-256 "
+        "bytes compile consistently when the target ABI makes plain char unsigned"
+    )
+    return tuple(
+        _edit(path, expected, replacement, rationale)
+        for path, expected, replacement in replacements
+    )
+
+
 def _debian_multiarch_path(
     files: list[tuple[str, str]], log: str, case: CaseData
 ) -> DeterministicMatch | None:
@@ -98,10 +154,19 @@ def _debian_multiarch_path(
             "derive the Debian multiarch directory from the target build architecture instead of "
             f"hard-coding the source architecture triplet {source_triplet}"
         )
+        planned_edits = [_edit(path, expected, replacement, rationale)]
+        if missing_cmake_package is not None and "AMDDeviceLibs_DIR" in expected:
+            companion_edits = _amd_comgr_unsigned_device_lib_id(files, case)
+            if companion_edits:
+                planned_edits.extend(companion_edits)
+                rationale += (
+                    "; also apply the exact upstream COMGR unsigned-byte identifier backport "
+                    "needed after configuration advances to target compilation"
+                )
         return DeterministicMatch(
             RepairFamily.PACKAGING_RULE,
             rationale,
-            (_edit(path, expected, replacement, rationale),),
+            tuple(planned_edits),
             confidence=0.97,
             risk=0.03,
         )
@@ -130,7 +195,7 @@ def _debian_multiarch_path(
         "use debhelper's compat-13 target multiarch substitution for install paths that the "
         "failure log explicitly reports missing"
     )
-    edits = tuple(
+    manifest_edits = tuple(
         _edit(
             path,
             expected,
@@ -142,7 +207,7 @@ def _debian_multiarch_path(
     return DeterministicMatch(
         RepairFamily.PACKAGING_RULE,
         rationale,
-        edits,
+        manifest_edits,
         confidence=0.97,
         risk=0.03,
     )

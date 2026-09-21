@@ -60,6 +60,15 @@ repeated verbatim in the failure log. Replays on the actual `node-re2`, `rocm-ll
 `buteo-sync-plugins` sources made only those guarded edits; none is counted as a repair success
 without organizer-equivalent target validation.
 
+Organizer validation later advanced `rocm-llvm` past its initial hard-coded
+AMDDeviceLibs multiarch path and exposed a second AArch64 failure in COMGR's
+generated SHA-256 identifier. Version 0.2.11 backports the complete four-file
+upstream unsigned-byte change when, and only when, that AMDDeviceLibs path
+failure and every legacy COMGR source signature are present. The generator,
+public API, implementation, and cache consumer are changed atomically; an
+incomplete source shape fails closed and retains only the evidenced multiarch
+path repair.
+
 ## System architecture
 
 The runtime is separated into small typed packages:
