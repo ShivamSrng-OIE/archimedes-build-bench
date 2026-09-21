@@ -29,8 +29,8 @@ Create a deterministic Development Validation Worktree Bundle from one frozen re
 
 ```text
 python dev/package_worktree_bundle.py \
-  --replay-root runs/development-validation-candidates-v0210-a847c1d \
-  --output dist/buildbench-development-worktrees-v0.2.10-a847c1d.zip
+  --replay-root runs/development-validation-candidates-v0211-rocm-fix \
+  --output dist/buildbench-development-worktrees-v0.2.11-rocm-fix.zip
 ```
 
 The packager fails closed on incomplete Cases, duplicate Case IDs, symlinks, and non-regular files.
@@ -40,6 +40,11 @@ It follows the live portal contract exactly: a root `manifest.json` using schema
 `development-recommended-v1`, plus each complete repaired package source tree under
 `cases/<case-id>/worktree/input/`. It does not add Case-level manifests or platform metadata. This
 bundle is for Development Validation; it is distinct from `dist/agent-submission.zip`.
+
+The frozen v0.2.11 bundle above has SHA-256
+`d6955489d19d1a2cb45c1a010c900182948b2b33ee0f7368058b60d3dd358b40` and was validated
+for the `rocm-llvm` ARM64 Case in run `DV-20260921T154515Z-2ce55011` (passed on attempt 1).
+Keep this bundle distinct from the qualified Agent ZIP documented in `SUBMISSION.md`.
 
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
 when comparing configurations. Change only one component for an ablation. The default runner does

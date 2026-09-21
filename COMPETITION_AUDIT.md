@@ -1,5 +1,21 @@
 # Build-Bench CSTCloud compliance audit - 2026-09-07
 
+## Status update - 21 September 2026
+
+This document's page-by-page rules and release details are the historical 7 September audit, not
+a fresh comprehensive re-audit. The current qualified immutable Agent is `archimedes` v0.2.11,
+submission `20260921T155822Z-9f76439b`, archive
+`dist/agent-submission-v0.2.11-ready.zip` (SHA-256
+`d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be`). Static checks
+and the Hosted Smoke Test passed 1/1. Development Validation run
+`DV-20260921T154515Z-2ce55011` passed the repaired `rocm-llvm` ARM64 target build and artifact
+verification; the corrected earlier run passed the other three selected Cases. These public
+results are not Full Evaluation or leaderboard evidence. The live My Submissions page still showed
+`Full Evaluation is not enabled`, zero full evaluations, and no rank. Real-model delivery and final
+policy must be verified when the organizer enables that phase. See `SUBMISSION.md` and the ignored
+`runs/development-validation-DV-20260921T154515Z-2ce55011/RUN_EVIDENCE.md` for the current
+handoff.
+
 ## Scope and authority
 
 This audit reviewed every participant-facing HTML page reachable from the live CSTCloud Build-Bench

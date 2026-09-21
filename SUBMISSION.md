@@ -1,6 +1,7 @@
 # Build-Bench submission and evaluation checklist for Archimedes
 
-Last live-site audit: **7 September 2026 UTC**.
+Last submission-status check: **21 September 2026 UTC**. The detailed release/rules audit below
+is a historical **7 September 2026** snapshot; recheck live policy before Full Evaluation.
 
 This checklist is subordinate to the current CSTCloud platform, versioned competition rules, and
 the Starter Kit used to create an upload. The former GitHub Pages site is no longer the operational
@@ -19,7 +20,36 @@ Official participant pages:
 - [Leaderboard](https://matrix.cstcloud.cn/build-bench/leaderboard.html)
 - [Contact](https://matrix.cstcloud.cn/build-bench/contact.html)
 
-## Current immutable submission
+## Current immutable submission (21 September 2026)
+
+```text
+Agent:          archimedes
+Agent version:  0.2.11
+Submission ID:  20260921T155822Z-9f76439b
+Status:         Qualified
+Hosted Smoke:   hello succeeded (1/1); final clean-patch validation succeeded
+Source commit:  e23bb1a
+Archive:        dist/agent-submission-v0.2.11-ready.zip
+Archive bytes:  91,407
+SHA-256:        d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be
+```
+
+The exact v0.2.11 worktree bundle passed `rocm-llvm` ARM64 Development Validation on its first
+attempt (run `DV-20260921T154515Z-2ce55011`): intake, canonical repair, target build, and artifact
+verification all passed. The organizer's corrected earlier run
+`DV-20260921T040125Z-5afed455` passed the other three selected Cases and exposed the genuine
+COMGR compile issue repaired in v0.2.11. These are four public-case validation observations across
+two runs, **not** a single four-case v0.2.11 run or a hidden-evaluation score. Evidence is retained
+under `runs/development-validation-DV-20260921T154515Z-2ce55011/` and
+`runs/submission-20260921T155822Z-9f76439b/`.
+
+The portal still disables `Start Full Evaluation` with `Full Evaluation is not enabled.` It shows
+zero full evaluations and no leaderboard rank. The qualified upload needs no replacement now.
+The organizer-controlled gate and unpublished real-model/network/credential policy remain to be
+resolved before a compliant Full Evaluation; the deterministic `hello` Smoke Test is not proof of
+real-model availability. Do not upload credentials into the Agent ZIP.
+
+## Historical qualification snapshot (7 September 2026)
 
 The following organizer-run qualification evidence was reported from the CSTCloud portal:
 
@@ -71,7 +101,7 @@ The official local `bb ready` orchestration is still blocked before testing by t
 asset-availability limitation. The organizer-hosted pipeline supplied those assets and qualified
 the exact immutable v0.2.9 archive successfully.
 
-## Development Validation candidate
+## Historical Development Validation candidate
 
 Agent `0.2.10` is a local successor candidate prepared for the organizer's public Development
 Validation channel. It makes repository inventory, regex search, architecture-hazard scanning, and
@@ -79,11 +109,11 @@ deterministic source scanning tolerate filesystem entries that cannot be inspect
 change was prompted by four released source packages whose extracted links are inaccessible through
 the Windows/WSL filesystem bridge. The corresponding replay failures all complete after the fix.
 
-This candidate is not the immutable qualified `0.2.9` submission and has not yet passed an
-organizer target-architecture build. Its Worktree Bundle and server results must be recorded before
-any repair-success claim or replacement Agent upload.
+At the time of this historical note, the candidate was not the immutable qualified `0.2.9`
+submission and had not passed an organizer target-architecture build. Subsequent server results
+and the v0.2.11 qualification are recorded above; do not use this older note as current status.
 
-## Current platform and release state
+## Historical platform and release state (7 September 2026)
 
 At the audit time:
 
@@ -226,7 +256,7 @@ The required final method disclosure covers model/provider/version, prompt and r
 retrieval and static tools, training or fine-tuning, external datasets or knowledge bases,
 third-party services, nondeterminism, caching, dependencies, and reproducibility constraints.
 
-## Items requiring participant attention
+## Historical participant checklist (7 September 2026)
 
 - Keep the qualified `0.2.9` archive, digest, and submission ID immutable and backed up.
 - Treat portal submission `20260907T041925Z-629a77c4` as the only version carrying the recorded
