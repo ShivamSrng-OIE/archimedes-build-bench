@@ -50,8 +50,11 @@ The v0.2.12 regression replay is retained under
 `runs/development-replay-v0212-all-20261003`: all 200 released source Cases completed. The focused
 four-Case replay is under `runs/development-replay-v0212-audit-four`; its nine changed-file digests
 match the corresponding v0.2.11 validation candidates exactly. This establishes repair-output
-equivalence, not new organizer build evidence. Package a new Worktree Bundle from the focused replay
-only when a fresh Development Validation run is useful; never confuse that bundle with
+equivalence, not new organizer build evidence. Its packaged bundle is
+`dist/buildbench-development-worktrees-v0.2.12-four.zip`, 2,251,539 bytes, SHA-256
+`d6955489d19d1a2cb45c1a010c900182948b2b33ee0f7368058b60d3dd358b40`—byte-for-byte
+identical to the frozen v0.2.11 bundle whose four repairs were validated across the two organizer
+runs. A redundant server rerun adds no new repair evidence; never confuse this Worktree Bundle with
 `dist/agent-submission-v0.2.12-ready.zip`.
 
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget

@@ -27,7 +27,7 @@ The exact v0.2.11 repaired worktree passed `rocm-llvm` ARM64 Development Validat
 four public target-build observations across two runs, not a single four-Case v0.2.11 run or a
 hidden score.
 
-## Local successor awaiting portal qualification
+## Organizer-qualified successor awaiting explicit final selection
 
 ```text
 Agent version:   0.2.12
@@ -38,6 +38,8 @@ Archive:         dist/agent-submission-v0.2.12-ready.zip
 Archive bytes:   93,817
 SHA-256:         80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7
 Example Case:    hello passed initial reproduction, Agent, patch, and final build
+Submission ID:   20261003T110859Z-cf35ceb6
+Portal status:   Qualified; Hosted Smoke passed 1/1
 ```
 
 The v0.2.12 archive was emitted by the official `bb ready` workflow in a privileged Linux Docker
@@ -46,13 +48,15 @@ and an untouched rc.3 kit encountered host bind-mount and nested-build permissio
 official runner was not modified to bypass them.
 
 The full local suite, lint, strict typing, bytecode compilation, archive/source comparison, secret
-scan, and preflight must remain green at the release commit. All 200 public source replays completed;
+scan, and preflight are green at release commit `83f3e92`. All 200 public source replays completed;
 the four modified public worktrees reproduce the same nine file digests as the v0.2.11 repairs that
 already received target-build validation. These are strong regression checks but do not qualify the
 v0.2.12 ZIP on the organizer platform.
 
-Do not describe v0.2.12 as organizer-qualified or selected until its immutable portal row records a
-passed static check and Hosted Smoke Test. Uploading it must not replace v0.2.11 automatically.
+The portal records the exact digest prefix `80c22280d3cf…`, passed static checks, and a successful
+Hosted Smoke Test with final validation. The complete downloaded organizer log is retained under
+`runs/submission-20261003T110859Z-cf35ceb6/smoke-test.log`. Uploading and qualification did not
+replace v0.2.11; selecting v0.2.12 is a distinct consequential action.
 
 ## Package contract
 
@@ -145,5 +149,6 @@ Keep these for provenance, but do not attribute later code to them:
 |---|---|---|---|
 | 0.2.9 | `20260907T041925Z-629a77c4` | `6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668` | Qualified; Hosted Smoke 1/1 |
 | 0.2.11 | `20260921T155822Z-9f76439b` | `d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be` | Qualified; Hosted Smoke 1/1; selected final |
+| 0.2.12 | `20261003T110859Z-cf35ceb6` | `80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7` | Qualified; Hosted Smoke 1/1; not selected |
 
 The comprehensive current rules/site/corpus audit is in `COMPETITION_AUDIT.md`.

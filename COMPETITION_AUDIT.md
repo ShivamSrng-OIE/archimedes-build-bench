@@ -11,8 +11,9 @@ Test passed 1/1, and its exact repaired public worktrees have four successful AR
 Validation observations across two runs. Those facts establish packaging, protocol, and four
 public target-build results; they are not a hidden Full Evaluation score or leaderboard result.
 
-Archimedes v0.2.12 is the locally qualified successor. The official Starter Kit `bb ready` workflow
-completed under rc.3, including the `hello` Example Case and clean-patch final build. It produced:
+Archimedes v0.2.12 is the organizer-qualified successor. The official Starter Kit `bb ready`
+workflow completed under rc.3, including the `hello` Example Case and clean-patch final build. It
+produced:
 
 ```text
 Archive: dist/agent-submission-v0.2.12-ready.zip
@@ -21,10 +22,13 @@ SHA-256: 80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7
 Run ID:  20261003T070000Z-v0212-final
 ```
 
-The v0.2.12 changes harden untrusted input, filesystem traversal, provider responses, configuration,
+The exact archive was uploaded as immutable submission `20261003T110859Z-cf35ceb6`. Static checks
+passed and the Hosted Smoke Test passed 1/1: submission validation, Case preparation, initial failure
+reproduction, Agent completion, canonical patch generation, and final validation all succeeded. The
+v0.2.12 changes harden untrusted input, filesystem traversal, provider responses, configuration,
 JSON parsing, trace redaction, and source-context selection. Its four public-case worktrees are
-byte-for-byte identical to the v0.2.11 target-build-qualified repairs. Until v0.2.12 is uploaded and
-passes the organizer Hosted Smoke Test, it must not be described as organizer-qualified or selected.
+byte-for-byte identical to the v0.2.11 target-build-qualified repairs. v0.2.12 is qualified but is
+not selected; v0.2.11 remains the final selection until the participant explicitly replaces it.
 
 ## Sources reviewed
 
@@ -63,7 +67,7 @@ organizer-only Validator configuration, Docker Socket access, or another team's 
 | Data and downloads | Starter Kit rc.3 and public 200-Case development data are the current participant artifacts. | Checkout and immutable runtime image references are synchronized to rc.3. The 200 logs and released sources were replayed without bundling the dataset. |
 | Development Validation | Upload a source-package layout or complete unpacked repaired source trees; select public Cases; preserve run ID/logs; no secrets; results do not affect the leaderboard. | Complete unpacked worktrees are packaged under the documented manifest. Four target builds have passed for the v0.2.11 repair bytes. |
 | Team and login | Captain maintains the real roster and account; credentials stay outside artifacts. | Authenticated state was inspected without persisting credentials in the repository. Roster truth remains a participant attestation. |
-| My submissions | Uploads are immutable. Static checks and Hosted Smoke qualify a version. Final selection is a distinct state. | v0.2.11 is qualified and selected. v0.2.12 remains only a local candidate until the portal records otherwise. |
+| My submissions | Uploads are immutable. Static checks and Hosted Smoke qualify a version. Final selection is a distinct state. | v0.2.11 is qualified and selected. v0.2.12 is independently qualified and available for explicit selection. |
 | Evaluation detail | Organizer evaluations move through queued/preparing/evaluating/finalizing/completed; only a completed evaluation can yield a score. | No Full Evaluation record exists for Archimedes at the audit time. |
 | Leaderboard | Hosted Smoke and Development Validation do not rank teams; only compatible organizer evaluation batches count. | No score, rank, or leaderboard claim is made. |
 
