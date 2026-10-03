@@ -46,17 +46,17 @@ The frozen v0.2.11 bundle above has SHA-256
 for the `rocm-llvm` ARM64 Case in run `DV-20260921T154515Z-2ce55011` (passed on attempt 1).
 Keep this bundle distinct from the qualified Agent ZIP documented in `SUBMISSION.md`.
 
-The v0.2.13 regression replay is retained under
-`runs/development-replay-v0213-all-20261003`: all 200 released source Cases completed with the same
-per-Case modification behavior as v0.2.12. The focused four-Case replay is under
-`runs/development-replay-v0213-audit-four`; its nine changed-file digests match the corresponding
+The v0.2.14 regression replay is retained under
+`runs/development-replay-v0214-final-20261003`: all 200 released source Cases completed and only the
+same four expected Cases were modified. The focused four-Case replay is under
+`runs/development-replay-v0214-audit-four`; its nine changed-file digests match the corresponding
 v0.2.11 validation candidates exactly. This establishes repair-output equivalence, not new
 organizer build evidence. Its packaged bundle is
-`dist/buildbench-development-worktrees-v0.2.13-four.zip`, 2,251,539 bytes, SHA-256
+`dist/buildbench-development-worktrees-v0.2.14-four.zip`, 2,251,539 bytes, SHA-256
 `d6955489d19d1a2cb45c1a010c900182948b2b33ee0f7368058b60d3dd358b40`—byte-for-byte
 identical to the frozen v0.2.11 bundle whose four repairs were validated across the two organizer
 runs. A redundant server rerun adds no new repair evidence; never confuse this Worktree Bundle with
-`dist/agent-submission-v0.2.13-ready.zip`.
+`dist/agent-submission-v0.2.14-ready.zip`.
 
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
 when comparing configurations. Change only one component for an ablation. The default runner does

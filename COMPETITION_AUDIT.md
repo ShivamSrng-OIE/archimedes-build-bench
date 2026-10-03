@@ -11,26 +11,34 @@ Test passed 1/1, and its exact repaired public worktrees have four successful AR
 Validation observations across two runs. Those facts establish packaging, protocol, and four
 public target-build results; they are not a hidden Full Evaluation score or leaderboard result.
 
-Archimedes v0.2.13 is the organizer-qualified successor. The official Starter Kit `bb ready`
+Archimedes v0.2.14 is the organizer-qualified successor. The official Starter Kit `bb ready`
 workflow completed under rc.3, including the `hello` Example Case and clean-patch final build. It
 produced:
 
 ```text
-Archive: dist/agent-submission-v0.2.13-ready.zip
-Bytes:   96,448
-SHA-256: 02650f9e429e7e780c5d610ba148c8fb08972b57246663442cecb1c16d20cb09
-Run ID:  20261003T180000Z-v0213-final
+Archive: dist/agent-submission-v0.2.14-ready.zip
+Bytes:   100,092
+SHA-256: 714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
+Run ID:  20261003T193000Z-v0214-final
 ```
 
-The exact archive was uploaded as immutable submission `20261003T181216Z-814ddbfa`. Static checks
+The exact archive was uploaded as immutable submission `20261003T193341Z-1c80de94`. Static checks
 passed and the Hosted Smoke Test passed 1/1: submission validation, Case preparation, initial failure
 reproduction, Agent completion, canonical patch generation, and final validation all succeeded. The
-v0.2.13 changes add a capability-gated, strict `bb-build` adapter, preserve edits safely when the
-gateway fails, prioritize explicit build success over an uninformative parsed frontier, reject
-non-finite Case JSON, and generalize the four-file unsigned-digest repair away from package-specific
-paths and symbols. Its four public-case worktrees remain byte-for-byte identical to the v0.2.11
-target-build-qualified repairs. v0.2.13 is qualified but is
-not selected; v0.2.11 remains the final selection until the participant explicitly replaces it.
+v0.2.14 changes harden early failure reporting, explicit allowed-path handling, symlink rejection,
+bounded JSON depth, redirect-free authenticated model requests, strict configuration values,
+repository-wide repair uniqueness, probe working directories, and safe re-planning after a policy
+rejection. Its four public-case worktrees remain byte-for-byte identical to the v0.2.11
+target-build-qualified repairs. v0.2.14 is qualified but is not selected; v0.2.11 remains the final
+selection until the participant explicitly replaces it.
+
+The release commit passed 149 tests with two Windows-specific symlink skips and 56 subtests, Ruff,
+strict mypy across 75 source files, bytecode compilation, and whitespace checks. The exact uploaded
+ZIP has 81 unique regular-file members and 280,433 uncompressed bytes. A second deterministic package
+operation reproduced the same SHA-256 and bytes. Direct ZIP inspection found only the four permitted
+root entries and no traversal paths, duplicates, symlinks, encrypted entries, prohibited outputs, or
+credential-pattern hits; its CRC test passed. Coverage and Bandit were unavailable in the final
+Python environment and therefore are not claimed for v0.2.14.
 
 ## Sources reviewed
 
@@ -67,10 +75,10 @@ organizer-only Validator configuration, Docker Socket access, or another team's 
 | Rules | Foundation-model Repair Agent; no hidden material, Case-ID answers, build bypass, evaluator access, embedded credentials, or undeclared intervention. | No hidden data or credentials are present. Deterministic rules are evidence-gated and do not branch on Case ID or package name. Real-model delivery remains dependent on the organizer's unpublished execution mechanism. |
 | Timeline | Participant deadlines and organizer evaluation are separate phases. | A selected qualified version is retained. Uploading a new candidate does not silently replace it. |
 | FAQ | No custom runtime image; the Starter Kit does not currently ship participant `bb-build`; Hosted Smoke only qualifies packaging; development and hidden sets are distinct. | The managed runtime is retained. The adapter stays dormant unless the runtime executable and Case metadata both declare the exact protocol-0.1 capability. No smoke/public result is reported as a hidden score. |
-| Data and downloads | Starter Kit rc.3 and public 200-Case development data are the current participant artifacts. | Checkout and immutable runtime image references are synchronized to rc.3. The 200 logs and released sources were replayed without bundling the dataset. |
+| Data and downloads | The live downloads page labels the Starter Kit rc.2 while the participant guide and actual current kit/runtime identify rc.3; the public development corpus contains 200 selectable Cases. | The verified local kit and immutable image references are rc.3. The 200 logs and released sources were replayed without bundling the dataset. The page-label discrepancy is retained as an organizer-side ambiguity. |
 | Development Validation | Upload a source-package layout or complete unpacked repaired source trees; select public Cases; preserve run ID/logs; no secrets; results do not affect the leaderboard. | Complete unpacked worktrees are packaged under the documented manifest. Four target builds have passed for the v0.2.11 repair bytes. |
 | Team and login | Captain maintains the real roster and account; credentials stay outside artifacts. | Authenticated state was inspected without persisting credentials in the repository. Roster truth remains a participant attestation. |
-| My submissions | Uploads are immutable. Static checks and Hosted Smoke qualify a version. Final selection is a distinct state. | v0.2.11 is qualified and selected. v0.2.13 is independently qualified and available for explicit selection. |
+| My submissions | Uploads are immutable. Static checks and Hosted Smoke qualify a version. Final selection is a distinct state. | v0.2.11 is qualified and selected. v0.2.14 is independently qualified and available for explicit selection. |
 | Evaluation detail | Organizer evaluations move through queued/preparing/evaluating/finalizing/completed; only a completed evaluation can yield a score. | No Full Evaluation record exists for Archimedes at the audit time. |
 | Leaderboard | Hosted Smoke and Development Validation do not rank teams; the page currently says each Team may run one Full Evaluation, and only compatible organizer-published completed evaluations count. | No score, rank, or leaderboard claim is made; the account has zero organizer evaluations. |
 
@@ -87,7 +95,7 @@ All 1,510 internally checksummed members verified. Five Debian epoch filenames c
 therefore require a Linux filesystem for faithful extraction; direct archive verification was not
 affected.
 
-Current v0.2.13 processing of all 200 released target-failure logs produced a non-empty diagnostic,
+Current v0.2.14 processing of all 200 released target-failure logs produced a non-empty diagnostic,
 a recognized family, and no unknown classification:
 
 | Failure family | Logs |
@@ -118,7 +126,7 @@ original lack of support for complete unpacked source trees. The platform added 
 reran the original bundle, and preserved prior logs. This was an infrastructure/input-contract issue,
 not evidence that the Agent's package repairs failed.
 
-## Cumulative edge-case hardening in v0.2.12 and v0.2.13
+## Cumulative edge-case hardening in v0.2.12 through v0.2.14
 
 - bounded and symlink-safe repository traversal with a deterministic file cap;
 - bounded metadata, repository files, failure evidence, and provider responses;
@@ -131,7 +139,7 @@ not evidence that the Agent's package repairs failed.
 - nested credential redaction and JSON-safe trace values;
 - trusted executable substitution for architecture probes;
 - recovery for curly-quoted compiler/autoconf diagnostics;
-- manifest/runtime version consistency checks.
+- manifest/runtime version consistency checks;
 - exact dual-gate discovery of the optional platform `bb-build` executable and task declaration;
 - strict, bounded build-feedback JSON, attempt metadata, exit-status, timeout, and finite-number checks;
 - safe retention of an evidence-supported repair when build feedback is unavailable or fails;
@@ -139,7 +147,17 @@ not evidence that the Agent's package repairs failed.
 - structural discovery of a complete generated-digest declaration/definition/consumer chain without
   package paths, Case IDs, package names, function names, or CMake-variable names;
 - a root `pytest.ini` boundary that prevents ignored third-party replay worktrees from entering the
-  repository test suite.
+  repository test suite;
+- best-effort protocol diagnostics even when configuration or workspace resolution fails early;
+- explicit wrapper allowed-path enforcement, rejection of symlink edits, and wrapped filesystem
+  errors at the repository boundary;
+- a deterministic maximum JSON nesting depth across Case, build-gateway, provider, and model data;
+- redirect-free authenticated HTTP requests so bearer credentials cannot cross endpoint boundaries;
+- bounded assumption/finding arrays, provider content, configuration strings, ports, and timeouts;
+- repository-wide uniqueness requirements for deterministic repairs and flag candidates;
+- validated probe working directories and fail-closed handling of ambiguous source matches;
+- evidence-safe completion after provider, model, patch, or build-feedback failures, including a
+  bounded policy-rejection re-plan path.
 
 ## Known limits and unresolved organizer gates
 
@@ -165,6 +183,12 @@ operational interpretation is therefore to keep one qualified version explicitly
 November 13 freeze and wait for the organizer-run evaluation; do not infer or attempt a participant
 trigger from the Leaderboard wording.
 
+The public pages also vary between “1,000+” and “approximately 1,000” hidden Cases, with the latter
+expressly subject to final quality checks. Despite the timeline's protocol-freeze milestone, the
+denominator and tie-break details remain marked pending. These inconsistencies do not change the
+submission archive contract; they prevent stronger claims about the hidden evaluation size or score
+calculation until the organizers publish one controlling final specification.
+
 The official rc.3 workflow succeeds in the preserved privileged Linux Docker environment. Direct
 Docker Desktop execution on the host encountered environment-level bind-mount and nested-build
 `/dev/null` permission failures, reproduced with a clean unmodified rc.3 kit. Those host failures are
@@ -173,7 +197,7 @@ not Agent failures and were not bypassed by changing the official runner.
 ## Release discipline
 
 1. Treat v0.2.11 as the selected final until the participant explicitly confirms selecting the
-   independently qualified v0.2.13 upload.
+   independently qualified v0.2.14 upload.
 2. Upload only the exact official `bb ready` ZIP and compare its complete SHA-256 with the portal.
 3. Preserve static-check, Hosted Smoke, Development Validation, and organizer-evaluation evidence
    separately; never promote one evidence class into another.
