@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.build.feedback import BuildFeedbackResult
 from src.config import FeatureFlags
+from src.errors import BuildFeedbackError
 from src.forensics.log_parser import analyze_build_log
 from src.reasoning.controller import RepairController
 from src.schemas import FailureFrontier, FrontierStage
@@ -29,6 +30,17 @@ class SequenceBuildFeedback:
         if expected_information_value <= 0:
             raise AssertionError("build experiments require positive information value")
         return self.results.pop(0)
+
+
+class FailingBuildFeedback:
+    available = True
+    request_limit = 1
+    reason_unavailable = None
+
+    def request(self, *, expected_information_value: float) -> BuildFeedbackResult:
+        if expected_information_value <= 0:
+            raise AssertionError("build experiments require positive information value")
+        raise BuildFeedbackError("simulated gateway failure")
 
 
 def feedback(log: str, stage: FrontierStage, signature: str, request_id: str) -> BuildFeedbackResult:
@@ -85,6 +97,45 @@ class RecoveryTests(unittest.TestCase):
             self.assertIn("-latomic", makefile.read_text(encoding="utf-8"))
             self.assertEqual(outcome.episode.attempts[0].decision.value, "keep")
             self.assertEqual(outcome.episode.attempts[1].decision.value, "success")
+
+    def test_explicit_success_overrides_an_uninformative_frontier(self) -> None:
+        initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
+        initial_frontier = analyze_build_log(initial_log).frontier
+        provider = SequenceBuildFeedback(
+            [BuildFeedbackResult(True, "build succeeded\n", initial_frontier, "build-1")]
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
+            makefile = repo / "Makefile"
+            makefile.write_text("CFLAGS += -msse4.2\n", encoding="utf-8")
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=provider,
+            ).run()
+        self.assertTrue(outcome.metrics.success)
+        self.assertEqual(outcome.metrics.rollback_count, 0)
+        self.assertEqual(outcome.episode.attempts[0].build_result, "success")
+
+    def test_gateway_failure_preserves_the_evidence_supported_repair(self) -> None:
+        initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
+            makefile = repo / "Makefile"
+            makefile.write_text("CFLAGS += -msse4.2\n", encoding="utf-8")
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=FailingBuildFeedback(),
+            ).run()
+            updated = makefile.read_text(encoding="utf-8")
+        self.assertIn("ARCHIMEDES_TARGET_TRIPLE", updated)
+        self.assertEqual(outcome.result.modified_paths, ["Makefile"])
+        self.assertEqual(outcome.metrics.rollback_count, 0)
+        self.assertEqual(outcome.episode.attempts[0].build_result, "unavailable")
+        self.assertIn("failed safely", outcome.result.message)
 
     def test_regression_rolls_back_the_current_attempt(self) -> None:
         initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"

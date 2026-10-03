@@ -29,8 +29,13 @@ def run() -> int:
         workspace = WorkspacePaths.resolve(config.workspace_root)
         capabilities = CapabilityRegistry.discover()
         build_feedback: BuildFeedbackProvider
-        if capabilities.has("bb-build"):
-            build_feedback = BbBuildFeedbackProvider()
+        bb_build_path = capabilities.path("bb-build")
+        if bb_build_path is not None:
+            build_feedback = BbBuildFeedbackProvider.discover(
+                executable=bb_build_path,
+                input_dir=workspace.input,
+                repo_root=workspace.repo,
+            )
         else:
             build_feedback = UnavailableBuildFeedbackProvider()
         log_event(logger, "workspace", "capabilities discovered", count=len(capabilities.executables))

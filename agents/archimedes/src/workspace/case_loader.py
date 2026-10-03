@@ -32,6 +32,10 @@ _MAX_METADATA_BYTES = 1_000_000
 _LOG_HEAD_BYTES = min(256_000, MAX_LOG_CHARACTERS // 4)
 
 
+def _reject_nonfinite_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number is not allowed: {value}")
+
+
 def _bounded_inline_log(value: str) -> str:
     if len(value) <= MAX_LOG_CHARACTERS:
         return value
@@ -75,8 +79,11 @@ def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
         except (OSError, ValueError) as exc:
             raise CaseFormatError(f"cannot inspect case metadata {path.name}: {exc}") from exc
         try:
-            value = json.loads(resolved.read_text(encoding="utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
+            value = json.loads(
+                resolved.read_text(encoding="utf-8"),
+                parse_constant=_reject_nonfinite_constant,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError, ValueError) as exc:
             raise CaseFormatError(f"cannot read case metadata {path.name}: {exc}") from exc
         if not isinstance(value, dict):
             raise CaseFormatError(f"case metadata {path.name} must contain an object")
@@ -126,7 +133,10 @@ def _released_case_identity(repo_dir: Path) -> tuple[str | None, str | None, str
         resolved.relative_to(repo_dir.resolve(strict=True))
         if not resolved.is_file() or resolved.stat().st_size > _MAX_METADATA_BYTES:
             return None, None, None
-        value = json.loads(resolved.read_text(encoding="utf-8"))
+        value = json.loads(
+            resolved.read_text(encoding="utf-8"),
+            parse_constant=_reject_nonfinite_constant,
+        )
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
         return None, None, None
     if not isinstance(value, dict) or value.get("schema_version") != _RELEASED_CASE_SCHEMA:

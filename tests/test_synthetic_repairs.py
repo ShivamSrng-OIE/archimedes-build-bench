@@ -175,20 +175,20 @@ class SyntheticRepairTests(unittest.TestCase):
                 rules.read_text(encoding="utf-8"),
             )
 
-    def test_rocm_multiarch_repair_backports_complete_unsigned_digest_fix(self) -> None:
+    def test_multiarch_repair_discovers_renamed_unsigned_digest_chain(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
                 {
-                    "case_id": "generic-rocm-comgr-multiarch-path",
+                    "case_id": "generic-renamed-digest-chain",
                     "source_architecture": "x86_64",
                     "target_architecture": "aarch64",
                 }
             )
             log = (
-                "-DAMDDeviceLibs_DIR=/build/lib/x86_64-linux-gnu/cmake/AMDDeviceLibs\n"
+                "-DPortableAssets_DIR=/build/lib/x86_64-linux-gnu/cmake/PortableAssets\n"
                 "CMake Error at CMakeLists.txt:108 (find_package):\n"
-                '  Could not find a package configuration file provided by "AMDDeviceLibs"\n'
+                '  Could not find a package configuration file provided by "PortableAssets"\n'
             )
             repo, _ = make_workspace(root, metadata=metadata, log=log)
             (repo / "debian").mkdir()
@@ -197,13 +197,13 @@ class SyntheticRepairTests(unittest.TestCase):
                 "#!/usr/bin/make -f\n"
                 "override_dh_auto_configure:\n"
                 "\tdh_auto_configure -- "
-                "-DAMDDeviceLibs_DIR=$(CURDIR)/build/lib/x86_64-linux-gnu/cmake/AMDDeviceLibs\n",
+                "-DPortableAssets_DIR=$(CURDIR)/build/lib/x86_64-linux-gnu/cmake/PortableAssets\n",
                 encoding="utf-8",
             )
-            comgr = repo / "amd" / "comgr"
-            (comgr / "cmake").mkdir(parents=True)
-            (comgr / "src").mkdir()
-            generator = comgr / "cmake" / "device-libs-id.py"
+            generated = repo / "vendor" / "portable-assets"
+            (generated / "tools").mkdir(parents=True)
+            (generated / "lib").mkdir()
+            generator = generated / "tools" / "emit-fingerprint.py"
             generator.write_text(
                 "    digest_uchar = hash.digest()\n"
                 "    digest_char = [e if e < 128 else e-256 for e in digest_uchar]\n"
@@ -212,18 +212,18 @@ class SyntheticRepairTests(unittest.TestCase):
                 '{{{digest_elts}, 0}};", file=open(args.output, \'w\'))\n',
                 encoding="utf-8",
             )
-            cache = comgr / "src" / "comgr-cache-command.cpp"
+            cache = generated / "lib" / "cache-key.cpp"
             cache.write_text(
-                "  addString(H, getDeviceLibrariesIdentifier());\n", encoding="utf-8"
+                "  addString(H, generatedAssetFingerprint());\n", encoding="utf-8"
             )
-            source = comgr / "src" / "comgr-device-libs.cpp"
+            source = generated / "lib" / "fingerprint.cpp"
             source.write_text(
-                "StringRef getDeviceLibrariesIdentifier() { return DEVICE_LIBS_ID; }\n",
+                "StringRef generatedAssetFingerprint() { return ASSET_FINGERPRINT; }\n",
                 encoding="utf-8",
             )
-            header = comgr / "src" / "comgr-device-libs.h"
+            header = generated / "lib" / "fingerprint.h"
             header.write_text(
-                "llvm::StringRef getDeviceLibrariesIdentifier();\n", encoding="utf-8"
+                "llvm::StringRef generatedAssetFingerprint();\n", encoding="utf-8"
             )
 
             outcome = RepairController(
@@ -236,10 +236,10 @@ class SyntheticRepairTests(unittest.TestCase):
                 set(outcome.result.modified_paths),
                 {
                     "debian/rules",
-                    "amd/comgr/cmake/device-libs-id.py",
-                    "amd/comgr/src/comgr-cache-command.cpp",
-                    "amd/comgr/src/comgr-device-libs.cpp",
-                    "amd/comgr/src/comgr-device-libs.h",
+                    "vendor/portable-assets/tools/emit-fingerprint.py",
+                    "vendor/portable-assets/lib/cache-key.cpp",
+                    "vendor/portable-assets/lib/fingerprint.cpp",
+                    "vendor/portable-assets/lib/fingerprint.h",
                 },
             )
             self.assertIn("unsigned char", generator.read_text(encoding="utf-8"))

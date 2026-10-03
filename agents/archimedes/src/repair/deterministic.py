@@ -48,10 +48,10 @@ def _edit(path: str, expected: str, replacement: str, rationale: str) -> Planned
     )
 
 
-def _amd_comgr_unsigned_device_lib_id(
+def _unsigned_digest_identifier(
     files: list[tuple[str, str]], case: CaseData
 ) -> tuple[PlannedEdit, ...]:
-    """Backport the complete upstream COMGR fix for target-dependent plain char."""
+    """Propagate a generated digest from plain ``char`` to unsigned bytes."""
     if (
         case.source_architecture.canonical is not Architecture.X86_64
         or case.target_architecture.canonical
@@ -59,48 +59,76 @@ def _amd_comgr_unsigned_device_lib_id(
     ):
         return ()
 
-    file_map = dict(files)
-    replacements = (
-        (
-            "amd/comgr/cmake/device-libs-id.py",
-            "    digest_char = [e if e < 128 else e-256 for e in digest_uchar]\n"
-            "    digest_elts = \", \".join(map(str, digest_char))\n"
-            "    print(f\"static const char {args.varname}[] = "
-            "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))",
-            "    digest_elts = \", \".join(map(str, digest_uchar))\n"
-            "    print(f\"static const unsigned char {args.varname}[] = "
-            "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))",
-        ),
-        (
-            "amd/comgr/src/comgr-cache-command.cpp",
-            "  addString(H, getDeviceLibrariesIdentifier());",
-            "  H.update(getDeviceLibrariesIdentifier());",
-        ),
-        (
-            "amd/comgr/src/comgr-device-libs.cpp",
-            "StringRef getDeviceLibrariesIdentifier() { return DEVICE_LIBS_ID; }",
-            "ArrayRef<unsigned char> getDeviceLibrariesIdentifier() { return DEVICE_LIBS_ID; }",
-        ),
-        (
-            "amd/comgr/src/comgr-device-libs.h",
-            "llvm::StringRef getDeviceLibrariesIdentifier();",
-            "llvm::ArrayRef<unsigned char> getDeviceLibrariesIdentifier();",
-        ),
+    generator_expected = (
+        "    digest_char = [e if e < 128 else e-256 for e in digest_uchar]\n"
+        "    digest_elts = \", \".join(map(str, digest_char))\n"
+        "    print(f\"static const char {args.varname}[] = "
+        "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))"
     )
-    if any(
-        path not in file_map
-        or file_map[path].replace("\r\n", "\n").replace("\r", "\n").count(expected) != 1
-        for path, expected, _ in replacements
-    ):
+    generator_replacement = (
+        "    digest_elts = \", \".join(map(str, digest_uchar))\n"
+        "    print(f\"static const unsigned char {args.varname}[] = "
+        "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))"
+    )
+    normalized = [
+        (path, text.replace("\r\n", "\n").replace("\r", "\n"))
+        for path, text in files
+    ]
+    generators = [
+        path for path, text in normalized if text.count(generator_expected) == 1
+    ]
+    functions: list[tuple[str, str, str, str]] = []
+    function_pattern = re.compile(
+        r"(?m)^(?P<expected>StringRef[ \t]+(?P<name>[A-Za-z_]\w*)\(\)[ \t]*"
+        r"\{[ \t]*return[ \t]+(?P<array>[A-Za-z_]\w*);[ \t]*\})$"
+    )
+    for path, text in normalized:
+        for match in function_pattern.finditer(text):
+            functions.append(
+                (path, match.group("expected"), match.group("name"), match.group("array"))
+            )
+    if len(generators) != 1 or len(functions) != 1:
+        return ()
+
+    function_path, function_expected, function_name, array_name = functions[0]
+    declaration_expected = f"llvm::StringRef {function_name}();"
+    consumer_expected = f"addString(H, {function_name}());"
+    declarations = [
+        path for path, text in normalized if text.count(declaration_expected) == 1
+    ]
+    consumers: list[tuple[str, str]] = []
+    for path, text in normalized:
+        for line in text.splitlines():
+            if line.strip() == consumer_expected:
+                consumers.append((path, line))
+    if len(declarations) != 1 or len(consumers) != 1:
         return ()
 
     rationale = (
-        "backport the complete upstream COMGR unsigned-byte identifier change so SHA-256 "
-        "bytes compile consistently when the target ABI makes plain char unsigned"
+        "propagate generated digest bytes as unsigned data through the discovered declaration, "
+        "definition, and hash consumer so values compile consistently when plain char is unsigned"
     )
-    return tuple(
-        _edit(path, expected, replacement, rationale)
-        for path, expected, replacement in replacements
+    consumer_path, consumer_line = consumers[0]
+    return (
+        _edit(generators[0], generator_expected, generator_replacement, rationale),
+        _edit(
+            consumer_path,
+            consumer_line,
+            consumer_line.replace(consumer_expected, f"H.update({function_name}());"),
+            rationale,
+        ),
+        _edit(
+            function_path,
+            function_expected,
+            f"ArrayRef<unsigned char> {function_name}() {{ return {array_name}; }}",
+            rationale,
+        ),
+        _edit(
+            declarations[0],
+            declaration_expected,
+            f"llvm::ArrayRef<unsigned char> {function_name}();",
+            rationale,
+        ),
     )
 
 
@@ -152,13 +180,13 @@ def _debian_multiarch_path(
             f"hard-coding the source architecture triplet {source_triplet}"
         )
         planned_edits = [_edit(path, expected, replacement, rationale)]
-        if missing_cmake_package is not None and "AMDDeviceLibs_DIR" in expected:
-            companion_edits = _amd_comgr_unsigned_device_lib_id(files, case)
+        if missing_cmake_package is not None:
+            companion_edits = _unsigned_digest_identifier(files, case)
             if companion_edits:
                 planned_edits.extend(companion_edits)
                 rationale += (
-                    "; also apply the exact upstream COMGR unsigned-byte identifier backport "
-                    "needed after configuration advances to target compilation"
+                    "; also propagate the structurally discovered generated digest as unsigned "
+                    "bytes before configuration advances to target compilation"
                 )
         return DeterministicMatch(
             RepairFamily.PACKAGING_RULE,

@@ -62,21 +62,34 @@ without organizer-equivalent target validation.
 
 Organizer validation later advanced `rocm-llvm` past its initial hard-coded
 AMDDeviceLibs multiarch path and exposed a second AArch64 failure in COMGR's
-generated SHA-256 identifier. Version 0.2.11 backports the complete four-file
-upstream unsigned-byte change when, and only when, that AMDDeviceLibs path
-failure and every legacy COMGR source signature are present. The generator,
-public API, implementation, and cache consumer are changed atomically; an
-incomplete source shape fails closed and retains only the evidenced multiarch
-path repair.
+generated SHA-256 identifier. Version 0.2.11 introduced the complete four-file
+unsigned-byte repair. Version 0.2.13 removes the package paths, package name,
+function name, and CMake-variable name from that planner. It now discovers a
+unique generated signed-byte digest, its returned array, matching declaration,
+and hash consumer by semantic source shape. The generator, public API,
+implementation, and consumer are changed atomically; an incomplete or
+ambiguous chain fails closed and retains only the separately evidenced
+multiarch-path repair.
 
 Version 0.2.12 preserves those qualified repair results while hardening the
-general runtime. Repository traversal is now deterministic, symlink-safe, and
+general runtime. Repository traversal is deterministic, symlink-safe, and
 bounded during enumeration rather than after materializing a complete tree.
 Metadata, source context, provider responses, numeric configuration, token
 usage, workspace paths, and file-creation preconditions fail closed on malformed
 or oversized inputs. Model context centers the compiler-reported causal line in
 deep source files, diagnostic probes execute the discovered trusted binary, and
 provider completions are capped at 1,000 tokens.
+
+Version 0.2.13 adds a capability-gated adapter for the platform-owned
+`bb-build` interface without assuming that it exists. The adapter is enabled
+only when both a discovered executable and contained `task.json` independently
+declare protocol `0.1`, the exact `bb-build` command, and a bounded attempt
+limit. Requests use the executable without arguments or a shell; responses are
+size-bounded, strict JSON with finite numbers and validated attempt metadata.
+An unavailable, malformed, rejected, or timed-out gateway fails safely while
+preserving the evidence-supported edit. Explicit build success takes precedence
+over an uninformative parsed frontier, preventing a successful repair from
+being rolled back.
 
 ## System architecture
 
@@ -96,8 +109,9 @@ The runtime is separated into small typed packages:
   structured interface, strict JSON contracts, bounded retry, and cost-aware FAST/STRONG routing.
 - `repair` loads generic portability rules, generates structured edits, runs portability and policy
   critics, applies atomic content/hash-guarded changes, and supports rollback without Git.
-- `build` isolates the unreleased official build-feedback contract. The current provider is
-  unavailable and fail-closed; no request format has been invented.
+- `build` isolates optional platform build feedback. It remains unavailable unless both the
+  runtime capability and Case metadata declare the exact protocol-0.1 `bb-build` interface;
+  malformed, absent, or inconsistent declarations fail closed.
 - `memory`, `context`, and `metrics` retain bounded per-case state, select small provenance-bearing
   context, and measure action/resource value without assuming cross-case persistence.
 
@@ -266,9 +280,9 @@ Important current limitations:
 - As of the 7 September 2026 CSTCloud audit, Full Evaluation is disabled and the official
   network/API-key injection policy, final runtime budgets, resource limits, score denominator,
   rerun limits, and credential mechanism remain unpublished.
-- `BbBuildFeedbackProvider` intentionally remains unavailable. Host compiler results are never
-  treated as official target-build truth because the participant documentation still calls hosted
-  build feedback a planned later-protocol feature.
+- `BbBuildFeedbackProvider` is dormant unless the platform supplies both the executable and the
+  matching Case declaration. Host compiler results are never treated as official target-build
+  truth, and no socket, token, Validator path, or evaluator configuration is inferred by the Agent.
 - Deterministic planners cover uniquely evidenced compiler-feature checks, guarded x86 flags,
   portable source selection, atomic linkage, RPM architecture conditions, artifact paths,
   generated-configuration markers, byte serialization, pointer-width assumptions, synchronized

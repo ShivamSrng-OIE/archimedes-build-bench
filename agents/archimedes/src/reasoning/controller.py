@@ -20,7 +20,7 @@ from ..context.repository_search import SearchSnippet, inventory_repository, sea
 from ..context.snippet_selector import select_snippets
 from ..evidence.confidence import claim_justifies_patch
 from ..evidence.ledger import EvidenceLedger
-from ..errors import PathPolicyError
+from ..errors import BuildFeedbackError, BudgetExhaustedError, PathPolicyError
 from ..forensics.frontier import FrontierMovement, compare_frontiers
 from ..forensics.log_parser import analyze_build_log
 from ..graph.builder import build_delta_graph
@@ -785,10 +785,10 @@ class RepairController:
         from ..schemas import FailureFrontier
 
         assert isinstance(before, FailureFrontier) and isinstance(after, FailureFrontier)
-        if self.config.features.failure_frontier:
-            return compare_frontiers(before, after)
         if success:
             return FrontierMovement.SUCCESS
+        if self.config.features.failure_frontier:
+            return compare_frontiers(before, after)
         if after.error_signature == before.error_signature:
             return FrontierMovement.INEFFECTIVE
         return FrontierMovement.PARTIAL_PROGRESS
@@ -950,6 +950,7 @@ class RepairController:
             build_result = None
             build_requested = False
             movement: FrontierMovement | None = None
+            build_feedback_error: str | None = None
             should_continue = False
             should_retain = True
             if self.build_feedback.available and selected.expected_information_gain_if_built > 0.20:
@@ -959,96 +960,107 @@ class RepairController:
                     expected_information_value=selected.expected_information_gain_if_built,
                     attempt=metrics.attempts,
                 )
-                self.build_budget.authorize()
-                feedback = self.build_feedback.request(
-                    expected_information_value=selected.expected_information_gain_if_built
-                )
-                self.build_budget.record()
                 build_requested = True
                 metrics.build_requests += 1
-                after_frontier = feedback.frontier
-                movement = self._compare_build_feedback(
-                    current_failure.frontier,
-                    feedback.frontier,
-                    success=feedback.success,
-                )
-                build_result = movement.value
-                self._mark_model_patch_outcome(selected.id, movement)
-                self._trace(
-                    ControllerStage.BUILD.value,
-                    "build_feedback_received",
-                    movement=movement.value,
-                    new_frontier=feedback.frontier.stage.name.lower(),
-                    success=feedback.success,
-                    attempt=metrics.attempts,
-                )
-                if self.config.features.failure_frontier:
-                    metrics.best_frontier = max(
-                        metrics.best_frontier, int(feedback.frontier.stage)
+                try:
+                    self.build_budget.authorize()
+                    feedback = self.build_feedback.request(
+                        expected_information_value=selected.expected_information_gain_if_built
                     )
-                if movement in {FrontierMovement.REGRESSION, FrontierMovement.INEFFECTIVE}:
-                    rollback_transaction(transaction)
-                    metrics.rollback_count += 1
-                    decision = RepairDecision.ROLLBACK
-                    should_retain = False
-                    should_continue = True
-                    contradicted_families.add(selected.repair_family)
-                    rejected = ledger.add_evidence(
-                        kind=EvidenceKind.REPAIR_HISTORY,
-                        summary=f"repair attempt produced {movement.value} build feedback",
-                        reliability=RELIABILITY["tool_result"],
-                        raw_excerpt=feedback.frontier.error_signature,
-                        source=f"build feedback {feedback.request_id or 'unidentified'}",
-                        stage=ControllerStage.BUILD.value,
+                    self.build_budget.record()
+                except (BuildFeedbackError, BudgetExhaustedError) as exc:
+                    build_feedback_error = type(exc).__name__
+                    build_result = "unavailable"
+                    self._trace(
+                        ControllerStage.BUILD.value,
+                        "build_feedback_failed",
+                        error_type=build_feedback_error,
+                        attempt=metrics.attempts,
                     )
-                    episode.contradictions.append(
-                        f"{selected.id} contradicted by {rejected.id}: {movement.value}"
-                    )
-                    matching_hypothesis = next(
-                        (
-                            item
-                            for item in hypotheses.hypotheses
-                            if item.repair_family is selected.repair_family
-                            and item.status is not HypothesisStatus.FALSIFIED
-                        ),
-                        None,
-                    )
-                    if matching_hypothesis is not None:
-                        hypotheses.falsify(matching_hypothesis.id)
-                        metrics.hypotheses_falsified += 1
-                elif movement is FrontierMovement.SUCCESS or feedback.success:
-                    decision = RepairDecision.SUCCESS
-                    metrics.success = True
-                    ledger.add_evidence(
-                        kind=EvidenceKind.TOOL_OUTPUT,
-                        summary="repair build completed successfully",
-                        reliability=RELIABILITY["tool_result"],
-                        raw_excerpt=feedback.frontier.error_signature,
-                        source=f"build feedback {feedback.request_id or 'unidentified'}",
-                        stage=ControllerStage.BUILD.value,
-                    )
-                    for item in hypotheses.hypotheses:
-                        if item.repair_family is selected.repair_family:
-                            item.status = HypothesisStatus.SELECTED
                 else:
-                    current_failure = self._feedback_failure(feedback, ledger)
-                    episode.observations.append(
-                        f"attempt={metrics.attempts} movement={movement.value} "
-                        f"frontier={feedback.frontier.stage.name.lower()}"
+                    after_frontier = feedback.frontier
+                    movement = self._compare_build_feedback(
+                        current_failure.frontier,
+                        feedback.frontier,
+                        success=feedback.success,
                     )
-                    current_hazards = (
-                        scan_architecture_hazards(self.workspace.repo)
-                        if self.config.features.deterministic_forensics
-                        else []
+                    build_result = movement.value
+                    self._mark_model_patch_outcome(selected.id, movement)
+                    self._trace(
+                        ControllerStage.BUILD.value,
+                        "build_feedback_received",
+                        movement=movement.value,
+                        new_frontier=feedback.frontier.stage.name.lower(),
+                        success=feedback.success,
+                        attempt=metrics.attempts,
                     )
-                    anchors = self._semantic_anchors(ledger, current_hazards)
-                    metrics.semantic_anchor_count = max(
-                        metrics.semantic_anchor_count, len(anchors)
-                    )
-                    for item in hypotheses.hypotheses:
-                        if item.repair_family is selected.repair_family:
-                            item.status = HypothesisStatus.SUPPORTED
-                    should_continue = True
+                    if self.config.features.failure_frontier:
+                        metrics.best_frontier = max(
+                            metrics.best_frontier, int(feedback.frontier.stage)
+                        )
+                    if movement in {FrontierMovement.REGRESSION, FrontierMovement.INEFFECTIVE}:
+                        rollback_transaction(transaction)
+                        metrics.rollback_count += 1
+                        decision = RepairDecision.ROLLBACK
+                        should_retain = False
+                        should_continue = True
+                        contradicted_families.add(selected.repair_family)
+                        rejected = ledger.add_evidence(
+                            kind=EvidenceKind.REPAIR_HISTORY,
+                            summary=f"repair attempt produced {movement.value} build feedback",
+                            reliability=RELIABILITY["tool_result"],
+                            raw_excerpt=feedback.frontier.error_signature,
+                            source=f"build feedback {feedback.request_id or 'unidentified'}",
+                            stage=ControllerStage.BUILD.value,
+                        )
+                        episode.contradictions.append(
+                            f"{selected.id} contradicted by {rejected.id}: {movement.value}"
+                        )
+                        matching_hypothesis = next(
+                            (
+                                item
+                                for item in hypotheses.hypotheses
+                                if item.repair_family is selected.repair_family
+                                and item.status is not HypothesisStatus.FALSIFIED
+                            ),
+                            None,
+                        )
+                        if matching_hypothesis is not None:
+                            hypotheses.falsify(matching_hypothesis.id)
+                            metrics.hypotheses_falsified += 1
+                    elif movement is FrontierMovement.SUCCESS:
+                        decision = RepairDecision.SUCCESS
+                        metrics.success = True
+                        ledger.add_evidence(
+                            kind=EvidenceKind.TOOL_OUTPUT,
+                            summary="repair build completed successfully",
+                            reliability=RELIABILITY["tool_result"],
+                            raw_excerpt=feedback.frontier.error_signature,
+                            source=f"build feedback {feedback.request_id or 'unidentified'}",
+                            stage=ControllerStage.BUILD.value,
+                        )
+                        for item in hypotheses.hypotheses:
+                            if item.repair_family is selected.repair_family:
+                                item.status = HypothesisStatus.SELECTED
+                    else:
+                        current_failure = self._feedback_failure(feedback, ledger)
+                        episode.observations.append(
+                            f"attempt={metrics.attempts} movement={movement.value} "
+                            f"frontier={feedback.frontier.stage.name.lower()}"
+                        )
+                        current_hazards = (
+                            scan_architecture_hazards(self.workspace.repo)
+                            if self.config.features.deterministic_forensics
+                            else []
+                        )
+                        anchors = self._semantic_anchors(ledger, current_hazards)
+                        metrics.semantic_anchor_count = max(
+                            metrics.semantic_anchor_count, len(anchors)
+                        )
+                        for item in hypotheses.hypotheses:
+                            if item.repair_family is selected.repair_family:
+                                item.status = HypothesisStatus.SUPPORTED
+                        should_continue = True
             if should_retain:
                 retained_transactions.append(transaction)
             episode.attempts.append(RepairAttempt(
@@ -1067,6 +1079,12 @@ class RepairController:
             ))
             if not self.build_feedback.available:
                 message = "Applied one evidence-supported repair; official build feedback was unavailable."
+                break
+            if build_feedback_error is not None:
+                message = (
+                    "Applied one evidence-supported repair; official build feedback failed safely "
+                    "and the repair was preserved."
+                )
                 break
             if metrics.success:
                 message = f"Verified repair success after {metrics.attempts} attempt(s)."

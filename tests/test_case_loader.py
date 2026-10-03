@@ -107,6 +107,16 @@ class CaseLoaderTests(unittest.TestCase):
             with self.assertRaises(CaseFormatError):
                 load_case(paths)
 
+    def test_nonfinite_metadata_numbers_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            paths = self._workspace(root)
+            (paths.input / "case.json").write_text(
+                '{"schema_version":"0.1","weight":NaN}', encoding="utf-8"
+            )
+            with self.assertRaises(CaseFormatError):
+                load_case(paths)
+
     def test_recovers_released_identity_when_runner_task_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
