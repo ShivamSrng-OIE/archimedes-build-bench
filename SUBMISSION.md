@@ -30,33 +30,37 @@ hidden score.
 ## Organizer-qualified successor awaiting explicit final selection
 
 ```text
-Agent version:   0.2.12
+Agent version:   0.2.13
 Starter Kit:     0.1.0-rc.3
 Official ready:  succeeded
-Ready run ID:    20261003T070000Z-v0212-final
-Archive:         dist/agent-submission-v0.2.12-ready.zip
-Archive bytes:   93,817
-SHA-256:         80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7
+Ready run ID:    20261003T180000Z-v0213-final
+Archive:         dist/agent-submission-v0.2.13-ready.zip
+Archive bytes:   96,448
+SHA-256:         02650f9e429e7e780c5d610ba148c8fb08972b57246663442cecb1c16d20cb09
 Example Case:    hello passed initial reproduction, Agent, patch, and final build
-Submission ID:   20261003T110859Z-cf35ceb6
+Submission ID:   20261003T181216Z-814ddbfa
 Portal status:   Qualified; Hosted Smoke passed 1/1
 ```
 
-The v0.2.12 archive was emitted by the official `bb ready` workflow in a privileged Linux Docker
+The v0.2.13 archive was emitted by the official `bb ready` workflow in a privileged Linux Docker
 environment using the rc.3 immutable runtime images. Direct Docker Desktop runs of both this checkout
 and an untouched rc.3 kit encountered host bind-mount and nested-build permission failures. The
 official runner was not modified to bypass them.
 
-The full local suite, lint, strict typing, bytecode compilation, archive/source comparison, secret
-scan, and preflight are green at release commit `83f3e92`. All 200 public source replays completed;
+The full local suite (132 passed, one platform-specific symlink test skipped, 49 subtests), lint,
+strict typing over 74 source files, bytecode compilation, 84% branch coverage, archive/source
+comparison, secret scan, and preflight are green at release commit `ec97de0`. All 200 public source
+replays completed;
 the four modified public worktrees reproduce the same nine file digests as the v0.2.11 repairs that
-already received target-build validation. These are strong regression checks but do not qualify the
-v0.2.12 ZIP on the organizer platform.
+already received target-build validation. The v0.2.13 focused Worktree Bundle is also byte-for-byte
+identical to the validated v0.2.11 bundle. These are strong regression checks but do not replace the
+organizer's Hosted Smoke qualification or public target-build evidence.
 
-The portal records the exact digest prefix `80c22280d3cf…`, passed static checks, and a successful
+The portal records the exact digest prefix `02650f9e429e…`, passed static checks, and a successful
 Hosted Smoke Test with final validation. The complete downloaded organizer log is retained under
-`runs/submission-20261003T110859Z-cf35ceb6/smoke-test.log`. Uploading and qualification did not
-replace v0.2.11; selecting v0.2.12 is a distinct consequential action.
+`runs/submission-20261003T181216Z-814ddbfa/smoke-test.log` with SHA-256
+`075f54c97d53b9565cb32d94aeb7277cdb0adcfd5bf6d83df1b0d6e833d7aa4a`. Uploading and qualification
+did not replace v0.2.11; selecting v0.2.13 is a distinct consequential action.
 
 ## Package contract
 
@@ -86,8 +90,10 @@ The deterministic `hello` Case and deterministic public repair paths do not prov
 will be available in Full Evaluation.
 
 The current participant pages still do not publish the organizer's model endpoint, model IDs,
-credential injection, network policy, or final build-feedback interface. Do not guess an internal
-`bb-build` contract and never put a secret into the ZIP. Before Full Evaluation, retain the exact
+credential injection, network policy, or released build-feedback interface. v0.2.13 can use
+`bb-build` only when the actual runtime provides both the executable and the exact protocol-0.1 Case
+declaration; it never infers gateway sockets, tokens, or Validator configuration. Never put a secret
+into the ZIP. Before Full Evaluation, retain the exact
 organizer-approved provider/model identifiers, endpoint type, network and secret-delivery method,
 call/token/cost/time/build budgets, prompts, tools, and nondeterminism settings.
 
@@ -117,7 +123,7 @@ and scan the staged archive—not merely the working tree—for prohibited conte
 3. Compare the complete portal digest with the local SHA-256 and preserve the submission ID.
 4. Wait for static checking and run/await Hosted Smoke exactly as the portal directs.
 5. Inspect every retained packaging, execution, patch, and final-build diagnostic.
-6. Keep v0.2.11 selected unless and until v0.2.12 independently qualifies and the participant
+6. Keep v0.2.11 selected unless and until v0.2.13 independently qualifies and the participant
    explicitly confirms replacing the selected final at that irreversible step.
 7. Preserve any later organizer Full Evaluation ID and permitted logs separately from public
    Development Validation and Hosted Smoke evidence.
@@ -150,5 +156,6 @@ Keep these for provenance, but do not attribute later code to them:
 | 0.2.9 | `20260907T041925Z-629a77c4` | `6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668` | Qualified; Hosted Smoke 1/1 |
 | 0.2.11 | `20260921T155822Z-9f76439b` | `d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be` | Qualified; Hosted Smoke 1/1; selected final |
 | 0.2.12 | `20261003T110859Z-cf35ceb6` | `80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7` | Qualified; Hosted Smoke 1/1; not selected |
+| 0.2.13 | `20261003T181216Z-814ddbfa` | `02650f9e429e7e780c5d610ba148c8fb08972b57246663442cecb1c16d20cb09` | Qualified; Hosted Smoke 1/1; not selected |
 
 The comprehensive current rules/site/corpus audit is in `COMPETITION_AUDIT.md`.
