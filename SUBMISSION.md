@@ -1,221 +1,62 @@
-# Build-Bench submission and evaluation checklist for Archimedes
+# Archimedes release, submission, and evaluation record
 
-Last submission-status check: **2 October 2026 EDT**. The detailed release/rules audit below
-is a historical **7 September 2026** snapshot; recheck live policy before organizer-run Full
-Evaluation.
+Last checked: **3 October 2026 EDT**
 
-This checklist is subordinate to the current CSTCloud platform, versioned competition rules, and
-the Starter Kit used to create an upload. The former GitHub Pages site is no longer the operational
-submission portal.
-
-Official participant pages:
-
-- [Competition overview](https://matrix.cstcloud.cn/build-bench/index.html)
-- [Challenge definition](https://matrix.cstcloud.cn/build-bench/task.html)
-- [Participation and package contract](https://matrix.cstcloud.cn/build-bench/submission.html)
-- [Competition rules](https://matrix.cstcloud.cn/build-bench/rules.html)
-- [Timeline](https://matrix.cstcloud.cn/build-bench/timeline.html)
-- [FAQ](https://matrix.cstcloud.cn/build-bench/faq.html)
-- [Data and downloads](https://matrix.cstcloud.cn/build-bench/data-downloads.html)
-- [My Submissions](https://matrix.cstcloud.cn/build-bench/my-submissions.html)
-- [Leaderboard](https://matrix.cstcloud.cn/build-bench/leaderboard.html)
-- [Contact](https://matrix.cstcloud.cn/build-bench/contact.html)
-
-## Current final submission (selected 2 October 2026)
+## Selected organizer-qualified final
 
 ```text
-Agent:          archimedes
-Agent version:  0.2.11
-Submission ID:  20260921T155822Z-9f76439b
-Status:         Qualified
-Hosted Smoke:   hello succeeded (1/1); final clean-patch validation succeeded
-Final selection: Selected on 2 October 2026 at 11:41 PM EDT
-Source commit:  e23bb1a
-Archive:        dist/agent-submission-v0.2.11-ready.zip
-Archive bytes:  91,407
-SHA-256:        d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be
+Agent:           archimedes
+Agent version:   0.2.11
+Submission ID:   20260921T155822Z-9f76439b
+Portal status:   Qualified; Final version selected
+Hosted Smoke:    hello passed 1/1, including clean-patch final validation
+Selected:        2 October 2026 at 11:41 PM EDT
+Source commit:   e23bb1a
+Archive:         dist/agent-submission-v0.2.11-ready.zip
+Archive bytes:   91,407
+SHA-256:         d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be
 ```
 
-The exact v0.2.11 worktree bundle passed `rocm-llvm` ARM64 Development Validation on its first
-attempt (run `DV-20260921T154515Z-2ce55011`): intake, canonical repair, target build, and artifact
-verification all passed. The organizer's corrected earlier run
-`DV-20260921T040125Z-5afed455` passed the other three selected Cases and exposed the genuine
-COMGR compile issue repaired in v0.2.11. These are four public-case validation observations across
-two runs, **not** a single four-case v0.2.11 run or a hidden-evaluation score. Evidence is retained
-under `runs/development-validation-DV-20260921T154515Z-2ce55011/` and
-`runs/submission-20260921T155822Z-9f76439b/`.
+The live portal preserved this selection after reload. It showed no completed organizer Full
+Evaluation, score, or rank at the last check. The organizer—not a Hosted Smoke Test or Development
+Validation run—creates the canonical hidden evaluation and leaderboard result.
 
-The live portal records this exact immutable version as **Final version selected**. A clean reload
-preserved the selection, and the version-history row shows the same submission ID, qualified status,
-SHA-256 prefix, and Hosted Smoke result. No evaluation was started: the portal states that organizers
-will freeze the selected version and start Full Evaluation separately, and it still shows zero
-organizer evaluations and no leaderboard rank. The unpublished real-model/network/credential policy
-remains to be resolved before a compliant Full Evaluation; the deterministic `hello` Smoke Test is
-not proof of real-model availability. Do not upload credentials into the Agent ZIP.
+The exact v0.2.11 repaired worktree passed `rocm-llvm` ARM64 Development Validation in run
+`DV-20260921T154515Z-2ce55011`. The organizer-corrected earlier run
+`DV-20260921T040125Z-5afed455` passed `node-re2`, `buteo-sync-plugins`, and `qmidiarp`. This is
+four public target-build observations across two runs, not a single four-Case v0.2.11 run or a
+hidden score.
 
-## Historical qualification snapshot (7 September 2026)
-
-The following organizer-run qualification evidence was reported from the CSTCloud portal:
+## Local successor awaiting portal qualification
 
 ```text
-Agent:          archimedes
-Agent version:  0.2.9
-Submission ID:  20260907T041925Z-629a77c4
-Status:         Qualified
-Hosted Smoke:   hello succeeded (1/1)
-Validation:     static check, Agent execution, canonical patch, and final build all succeeded
+Agent version:   0.2.12
+Starter Kit:     0.1.0-rc.3
+Official ready:  succeeded
+Ready run ID:    20261003T070000Z-v0212-final
+Archive:         dist/agent-submission-v0.2.12-ready.zip
+Archive bytes:   93,817
+SHA-256:         80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7
+Example Case:    hello passed initial reproduction, Agent, patch, and final build
 ```
 
-The locally retained archive is:
+The v0.2.12 archive was emitted by the official `bb ready` workflow in a privileged Linux Docker
+environment using the rc.3 immutable runtime images. Direct Docker Desktop runs of both this checkout
+and an untouched rc.3 kit encountered host bind-mount and nested-build permission failures. The
+official runner was not modified to bypass them.
 
-```text
-dist/agent-submission-archimedes-v0.2.9-20260907T041925Z-629a77c4.zip
-SHA-256: 6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668
-```
+The full local suite, lint, strict typing, bytecode compilation, archive/source comparison, secret
+scan, and preflight must remain green at the release commit. All 200 public source replays completed;
+the four modified public worktrees reproduce the same nine file digests as the v0.2.11 repairs that
+already received target-build validation. These are strong regression checks but do not qualify the
+v0.2.12 ZIP on the organizer platform.
 
-The complete local digest was recomputed immediately before browser upload, and the portal displays
-the matching prefix `6a86ef3249bc…` for the immutable version.
+Do not describe v0.2.12 as organizer-qualified or selected until its immutable portal row records a
+passed static check and Hosted Smoke Test. Uploading it must not replace v0.2.11 automatically.
 
-Qualification proves that this immutable bundle satisfies the current static package checks and the
-Hosted Smoke Test contract. It does **not** prove repair performance on the public Development Cases,
-compliance with the still-unpublished foundation-model delivery policy, or success on Full/hidden
-evaluation.
+## Package contract
 
-Any source, manifest, dependency, or configuration change after this qualified `0.2.9` upload
-requires a new version and immutable upload. Do not attribute later local changes to submission
-`20260907T041925Z-629a77c4`.
-
-Qualified v0.2.9 release:
-
-```text
-Source commit:  291081f
-Submission ID:  20260907T041925Z-629a77c4
-Archive:        dist/agent-submission-archimedes-v0.2.9-20260907T041925Z-629a77c4.zip
-Archive bytes:  90,304
-SHA-256:        6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668
-Static check:   passed (79 files; standard-library-only dependency lock)
-Test suite:     100 passed, 20 subtests passed
-Quality gates:  Ruff passed; strict mypy passed for 73 source files; compileall passed
-Reproducibility: two consecutive official package runs produced the same SHA-256
-Hosted Smoke:   hello succeeded (1/1); final clean-patch validation succeeded
-```
-
-The official local `bb ready` orchestration is still blocked before testing by the unpublished
-`buildbench-validator-runtime:v0` and `buildbench-example-assets:v0` images. This is an organizer
-asset-availability limitation. The organizer-hosted pipeline supplied those assets and qualified
-the exact immutable v0.2.9 archive successfully.
-
-## Historical Development Validation candidate
-
-Agent `0.2.10` is a local successor candidate prepared for the organizer's public Development
-Validation channel. It makes repository inventory, regex search, architecture-hazard scanning, and
-deterministic source scanning tolerate filesystem entries that cannot be inspected safely. The
-change was prompted by four released source packages whose extracted links are inaccessible through
-the Windows/WSL filesystem bridge. The corresponding replay failures all complete after the fix.
-
-At the time of this historical note, the candidate was not the immutable qualified `0.2.9`
-submission and had not passed an organizer target-architecture build. Subsequent server results
-and the v0.2.11 qualification are recorded above; do not use this older note as current status.
-
-## Historical platform and release state (7 September 2026)
-
-At the audit time:
-
-- Starter Kit `v0.1.0-rc.2` remains the latest published kit and matches this checkout's `VERSION`.
-- Managed Python 3.11 and Agent protocol `0.1` remain the published submission contract.
-- Development Cases `v0.1` are published: 200 Ubuntu Launchpad cases, split evenly between
-  `x86_64-to-aarch64` and `aarch64-to-x86_64`.
-- The current Development Cases archive was generated at `2026-09-07T01:22:06Z`; its size is
-  222,919,777 bytes and SHA-256 is
-  `94372a28dbd81ece8f5007b83ec4b4ff1b0590de43a528be4461ae7f2bbd675d`.
-- This digest supersedes an earlier archive under the same `v0.1` label. Pin the digest as well as
-  the version whenever development evidence is recorded.
-- Separate protocol-schema downloads are still marked **Coming soon**.
-- Official runtime images are still marked **Registry pending**.
-- The public platform health response reports Full Evaluation disabled, not ready, and no Full
-  Evaluation worker available.
-- The rules still label the final score denominator, tie-breaker, timeouts, CPU/memory/storage,
-  concurrency, build-feedback budget, network/API policy, credential delivery, submission frequency,
-  rerun/cancellation rules, and feedback visibility as pending.
-
-The public phase is now listed as open. The public health endpoint still reports Full Evaluation
-disabled, not ready, and without a worker. Use the live portal and release index for availability,
-but do not infer unpublished evaluation limits from pilot behavior.
-
-## Critical foundation-model gate
-
-The rules require an LLM to be the Agent's foundation model. Archimedes supports real local or remote
-OpenAI-compatible models, but its safe development default remains `mock`. The qualified `hello`
-Smoke Test can be solved deterministically and therefore does not demonstrate that a real model was
-available during organizer execution.
-
-Do **not** start Full Evaluation until the organizer publishes the network and credential mechanism
-and the exact immutable candidate has completed a real-model smoke run through that mechanism.
-Never put an API key, `.env` file, credential, or private endpoint secret inside
-`agents/archimedes` or an Agent ZIP.
-
-Record for the evaluated immutable version:
-
-- exact fast and strong model identifiers and versions;
-- provider and endpoint type;
-- organizer-approved credential-injection method;
-- network availability assumptions;
-- model-call, token, cost, timeout, repair-iteration, and build-request limits;
-- prompt strategy, retrieval sources, static tools, external data, and known nondeterminism.
-
-## Public Development Cases v0.1
-
-The public archive contains case metadata using `schema_version: buildbench.case.v0.1`, with
-architectures under `platform` and the failure-log path under `task` and `paths`. Archimedes `0.2.9`
-accepts this shape as well as the existing flat Starter Kit task shape. This version also
-retains the tail of oversized logs, ranks concrete Debian/linker/test failures ahead of wrapper
-errors and echoed commands, extracts causal repository paths, and prioritizes Debian packaging
-files for model context.
-
-The development release excludes hidden labels, reference repairs, source-side success logs,
-organizer audit records, and previous run artifacts. Do not seek, reconstruct, or bundle those
-materials. Preserve upstream and distribution licenses when using or redistributing source packages.
-
-All 1,510 paths in the archive's internal `SHA256SUMS` verified directly against ZIP members. Five
-source-input filenames contain Debian epoch colons and cannot be extracted to NTFS; use a Linux
-filesystem for complete materialization. Static analysis of all 200 released failure logs produced
-a non-empty diagnostic and recognized family for every log, including ten logs over two megabytes;
-106 logs now yield a repository-path candidate and no selected primary matches the audited set of
-known command/inventory/warning-only false-positive prefixes.
-Three actual-source replays selected generic multiarch-path repairs for `node-re2`, `rocm-llvm`, and
-`buteo-sync-plugins` without model calls. The first two each changed only `debian/rules`; the third
-changed only two failure-log-proven `.install` tokens under its declared debhelper compat 13. These
-are integrity, ingestion, and candidate-selection results—not Verified Build Success Rate, because
-organizer-equivalent target builds were not run.
-
-A fourth actual-source replay, `qmidiarp`, selected a portable-flag repair without a model call. It
-changed only `configure.ac`, removed exactly the x86-only flags explicitly rejected in the released
-ARM failure log, preserved the other flags, and did not edit generated `configure`. This remains
-candidate-selection evidence until an organizer-equivalent target build validates it.
-
-## Build and package a new candidate
-
-Use Linux or WSL2 with Docker Engine 24+ or Docker Desktop using Linux containers. From the Starter
-Kit root:
-
-```bash
-./bb version
-./bb doctor
-./bb demo
-./bb ready --agent ./agents/archimedes --json
-```
-
-Do not claim readiness unless `ready` exits zero, returns `"status": "succeeded"`, creates
-`dist/agent-submission.zip`, and reports the same SHA-256 as the file.
-
-Inspect the exact archive:
-
-```bash
-unzip -l dist/agent-submission.zip
-sha256sum dist/agent-submission.zip
-```
-
-Its root must contain only the allowed shallow Agent bundle:
+Only upload the exact `bb ready` artifact. Its ZIP root must contain:
 
 ```text
 agent.yaml
@@ -224,50 +65,85 @@ README.md
 src/
 ```
 
-It must not contain the Starter Kit, tests, Development Cases, caches, logs, `.env`, credentials,
-prior patches, model weights, symlinks, virtual environments, or run artifacts. Upload only the ZIP
-emitted by `bb`; never manually zip the repository.
+It must not contain the Starter Kit, tests, Development Cases, worktree bundles, caches, logs,
+credentials, `.env`, patches, model weights, symlinks, virtual environments, or previous runs.
+Every dependency must be exactly pinned; Archimedes currently needs no third-party Python package.
 
-Run the stricter development audit as an additional check:
+The entrypoint is non-interactive and may modify only `/workspace/work/repo`. It reads bounded input
+from `/workspace/input`, writes structured output under `/workspace/output`, and does not start
+Docker or contact the Validator directly. The organizer derives and reapplies the canonical patch to
+a clean Case before target build validation.
+
+## Foundation-model gate
+
+The rules require a foundation-model Repair Agent. Archimedes supports explicitly configured local
+or remote OpenAI-compatible providers, but its safe credential-free development default is `mock`.
+The deterministic `hello` Case and deterministic public repair paths do not prove that a real model
+will be available in Full Evaluation.
+
+The current participant pages still do not publish the organizer's model endpoint, model IDs,
+credential injection, network policy, or final build-feedback interface. Do not guess an internal
+`bb-build` contract and never put a secret into the ZIP. Before Full Evaluation, retain the exact
+organizer-approved provider/model identifiers, endpoint type, network and secret-delivery method,
+call/token/cost/time/build budgets, prompts, tools, and nondeterminism settings.
+
+## Pre-upload procedure
+
+From the Starter Kit root in the supported Linux/Docker environment:
 
 ```bash
+./bb version
+./bb doctor
+./bb ready --agent ./agents/archimedes --json
 python dev/submission_preflight.py --json
 ```
 
-Manual attestations in that command record external facts; they do not bypass an organizer check.
+Readiness requires a zero process exit, `"status": "succeeded"`, an existing ZIP, and exact
+agreement between the JSON artifact SHA-256 and a fresh file hash. Then verify the archive inventory
+and scan the staged archive—not merely the working tree—for prohibited content.
 
-## Upload, qualify, and evaluate
+## Portal procedure
 
-1. Open **My Submissions** and upload `dist/agent-submission.zip` as a new immutable version.
-2. Confirm the complete platform digest against the local SHA-256.
-3. Wait for static checks, then run or await the Hosted Smoke Test as directed by the portal.
-4. Review the retained entrypoint, dependency, workspace, result-schema, canonical-patch, permission,
-   and build diagnostics.
-5. Treat any change as a new version and repeat packaging, digest comparison, and qualification.
-6. Keep the intended qualified immutable version selected before the final-selection deadline. The
-   organizer, not the participant, freezes the selection and starts Full Evaluation separately.
-7. If a material Agent change is made before the deadline, upload and qualify the new immutable
-   version, then explicitly replace the final selection; uploading alone does not select it.
+1. Recheck [Rules](https://matrix.cstcloud.cn/build-bench/rules.html),
+   [FAQ](https://matrix.cstcloud.cn/build-bench/faq.html),
+   [Data and downloads](https://matrix.cstcloud.cn/build-bench/data.html), and
+   [Timeline](https://matrix.cstcloud.cn/build-bench/timeline.html).
+2. Upload the exact immutable ZIP through
+   [My submissions](https://matrix.cstcloud.cn/build-bench/my-submissions.html).
+3. Compare the complete portal digest with the local SHA-256 and preserve the submission ID.
+4. Wait for static checking and run/await Hosted Smoke exactly as the portal directs.
+5. Inspect every retained packaging, execution, patch, and final-build diagnostic.
+6. Keep v0.2.11 selected unless and until v0.2.12 independently qualifies and the participant
+   explicitly confirms replacing the selected final at that irreversible step.
+7. Preserve any later organizer Full Evaluation ID and permitted logs separately from public
+   Development Validation and Hosted Smoke evidence.
 
-## Reproducibility record
+## Development Validation procedure
 
-Retain the submitted ZIP, complete SHA-256, source commit, lockfile, manifest, exact model/provider
-configuration, prompt and disclosure text, local `bb ready` JSON, Hosted Smoke log, platform
-submission ID, platform digest, Full Evaluation ID, and permitted evaluation diagnostics.
+The validation service accepts the documented source-package layout or complete unpacked repaired
+source trees. A worktree bundle is separate from the Agent ZIP. It contains root `manifest.json`
+schema `0.1`, suite `development-recommended-v1`, and repaired sources under
+`cases/<case-id>/worktree/input/`.
 
-The required final method disclosure covers model/provider/version, prompt and repair-loop design,
-retrieval and static tools, training or fine-tuning, external datasets or knowledge bases,
-third-party services, nondeterminism, caching, dependencies, and reproducibility constraints.
+Never include API keys, passwords, tokens, Git metadata, quilt state, or unrelated files. Preserve
+the run ID and logs. A platform failure must be distinguished from a source preparation,
+configuration, compile, link, test, packaging, or artifact failure before changing the Agent.
 
-## Historical participant checklist (7 September 2026)
+## Evidence boundaries
 
-- Keep the qualified `0.2.9` archive, digest, and submission ID immutable and backed up.
-- Treat portal submission `20260907T041925Z-629a77c4` as the only version carrying the recorded
-  v0.2.9 qualification evidence; retain v0.2.8 only as a fallback snapshot.
-- Do not start Full Evaluation while the platform reports it disabled or before model/network policy
-  and resource limits are published.
-- Confirm the organizer-supported real LLM configuration before evaluating; `mock` is development
-  only and does not satisfy the competition foundation-model rule.
-- Re-check the CSTCloud Rules, Timeline, FAQ, and Data & Downloads pages immediately before every new
-  upload or Full Evaluation request because material operational parameters are still pending.
-- Use `buildbench-challenge@googlegroups.com` for rule or infrastructure clarification.
+- `bb ready` success: exact local packaging and Example Case evidence.
+- Hosted Smoke 1/1: organizer runtime and one smoke Case; not a score.
+- Development Validation pass: one selected public target build; not a hidden evaluation.
+- Completed Full Evaluation: only source of an official hidden score.
+- Leaderboard entry: only the organizer's compatible published evaluation batch determines rank.
+
+## Historical immutable records
+
+Keep these for provenance, but do not attribute later code to them:
+
+| Version | Submission | SHA-256 | Evidence |
+|---|---|---|---|
+| 0.2.9 | `20260907T041925Z-629a77c4` | `6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668` | Qualified; Hosted Smoke 1/1 |
+| 0.2.11 | `20260921T155822Z-9f76439b` | `d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be` | Qualified; Hosted Smoke 1/1; selected final |
+
+The comprehensive current rules/site/corpus audit is in `COMPETITION_AUDIT.md`.

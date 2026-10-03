@@ -44,6 +44,15 @@ class WorkspaceRepairTests(unittest.TestCase):
             paths = WorkspacePaths.resolve(root)
             self.assertTrue(paths.probe_temp.is_dir())
 
+    def test_workspace_rejects_non_directory_output(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            (root / "input").mkdir()
+            (root / "work" / "repo").mkdir(parents=True)
+            (root / "output").write_text("not a directory", encoding="utf-8")
+            with self.assertRaises(WorkspaceError):
+                WorkspacePaths.resolve(root)
+
     def test_path_policy_rejects_traversal_absolute_and_protected(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
@@ -92,6 +101,16 @@ class WorkspaceRepairTests(unittest.TestCase):
             edit = PlannedEdit("replace_lines", "data.bin", "safe", expected_text="a")
             with self.assertRaises(PatchValidationError):
                 apply_candidate(candidate(edit), PathPolicy(repo))
+
+    def test_create_file_cannot_overwrite_existing_empty_file(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            path = repo / "empty.conf"
+            path.write_bytes(b"")
+            edit = PlannedEdit("create_file", "empty.conf", "replacement\n")
+            with self.assertRaises(PatchValidationError):
+                apply_candidate(candidate(edit), PathPolicy(repo))
+            self.assertEqual(path.read_bytes(), b"")
 
     def test_multiline_edit_preserves_crlf(self) -> None:
         with tempfile.TemporaryDirectory() as name:

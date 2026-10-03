@@ -9,6 +9,7 @@ from src.build.feedback import BuildFeedbackResult
 from src.build.unavailable import UnavailableBuildFeedbackProvider
 from src.context.token_budget import UsageBudget
 from src.config import FeatureFlags
+from src.forensics.log_parser import analyze_build_log
 from src.models.base import ModelTask
 from src.models.mock import MockModelClient
 from src.models.router import ModelRouter
@@ -133,6 +134,27 @@ class ModelControllerTests(unittest.TestCase):
             self.assertTrue(diagnostic["model_call_records"][0]["changed_hypothesis"])
             self.assertTrue(diagnostic["model_call_records"][1]["caused_patch"])
             self.assertTrue(diagnostic["model_call_records"][1]["improved_frontier"])
+
+    def test_model_context_centers_the_causal_source_line(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(root)
+            source = repo / "src" / "deep.c"
+            source.parent.mkdir()
+            source.write_text(
+                "\n".join(f"line {number}" for number in range(1, 301)) + "\n",
+                encoding="utf-8",
+            )
+            controller = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            )
+            failure = analyze_build_log("src/deep.c:240:7: error: unsupported opcode\n")
+            context = controller._model_file_context(failure, [])
+        self.assertIn("--- src/deep.c:161", context)
+        self.assertIn("line 240", context)
+        self.assertNotIn("line 1\n", context)
 
     def test_model_plan_with_traversal_is_rejected_without_edit(self) -> None:
         plan = {

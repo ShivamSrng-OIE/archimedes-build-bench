@@ -39,6 +39,9 @@ def execute_probe(
     executable = Path(probe.command[0]).name
     if not capabilities.has(executable):
         raise ProbeError(f"probe executable is unavailable: {executable}")
+    executable_path = capabilities.path(executable)
+    if executable_path is None:
+        raise ProbeError(f"probe executable is unavailable: {executable}")
     cwd = (repo_root / probe.working_directory).resolve(strict=True)
     try:
         cwd.relative_to(repo_root.resolve(strict=True))
@@ -46,7 +49,7 @@ def execute_probe(
         raise ProbeError("probe working directory escapes repository") from exc
     try:
         completed = subprocess.run(
-            probe.command,
+            [executable_path, *probe.command[1:]],
             cwd=cwd,
             timeout=probe.timeout_seconds,
             capture_output=True,
@@ -56,7 +59,7 @@ def execute_probe(
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProbeError(f"probe execution failed: {exc}") from exc
-    provenance = capabilities.path(executable) if probe.requires_target_toolchain else None
+    provenance = executable_path if probe.requires_target_toolchain else None
     return ProbeResult(
         probe.id,
         completed.returncode,

@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.context.token_budget import UsageBudget
 from src.errors import BudgetExhaustedError, ModelProtocolError
@@ -37,6 +38,20 @@ class ModelsLoggingTests(unittest.TestCase):
         raw = '{"repair_family":"x","rationale":"x","assumptions":[],"edits":[{"operation":"shell"}]}'
         with self.assertRaises(ModelProtocolError):
             parse_model_json(raw, ModelTask.PATCH_PLANNING)
+
+    def test_json_protocol_rejects_wrong_failure_analysis_types(self) -> None:
+        malformed = dict(FAILURE_RESPONSE)
+        malformed["recommended_files"] = "Makefile"
+        with self.assertRaises(ModelProtocolError):
+            parse_model_json(json.dumps(malformed), ModelTask.FAILURE_ANALYSIS)
+
+    def test_json_protocol_rejects_nonfinite_json_numbers(self) -> None:
+        raw = (
+            '{"primary_failure":"x","failure_stage":"compile","claims":[],'
+            '"hypotheses":[NaN],"recommended_files":[]}'
+        )
+        with self.assertRaises(ModelProtocolError):
+            parse_model_json(raw, ModelTask.FAILURE_ANALYSIS)
 
     def test_json_protocol_requires_complete_bounded_patch_edits(self) -> None:
         raw = (
@@ -88,11 +103,60 @@ class ModelsLoggingTests(unittest.TestCase):
         self.assertEqual(response.data["repair_family"], "source_port")
         self.assertEqual(response.provider_requests, 2)
         self.assertEqual(len(client.payloads), 2)
+        self.assertEqual(client.payloads[0]["max_tokens"], 1000)
         messages = client.payloads[-1]["messages"]
         assert isinstance(messages, list)
         correction = messages[-1]
         assert isinstance(correction, dict)
         self.assertIn("missing required keys", str(correction["content"]))
+
+    def test_openai_adapter_ignores_invalid_provider_usage_values(self) -> None:
+        class StubClient(OpenAICompatibleModelClient):
+            def __init__(self) -> None:
+                super().__init__(
+                    base_url="http://127.0.0.1:1/v1",
+                    api_key=None,
+                    fast_model="fast",
+                    strong_model="strong",
+                )
+
+            def _request(self, payload: dict[str, object], timeout: float) -> dict[str, object]:
+                del payload, timeout
+                return {
+                    "choices": [{"message": {"content": json.dumps(FAILURE_RESPONSE)}}],
+                    "usage": {"prompt_tokens": "not-a-number", "completion_tokens": -4},
+                }
+
+        response = StubClient().complete_json(
+            task=ModelTask.FAILURE_ANALYSIS,
+            tier=ModelTier.FAST,
+            system_prompt="system",
+            user_prompt="input",
+            timeout_seconds=1,
+        )
+        self.assertEqual(response.input_tokens, 2)
+        self.assertGreater(response.output_tokens, 0)
+
+    def test_openai_adapter_rejects_oversized_provider_response(self) -> None:
+        class OversizedResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def read(self, size: int) -> bytes:
+                return b"x" * size
+
+        client = OpenAICompatibleModelClient(
+            base_url="http://127.0.0.1:1/v1",
+            api_key=None,
+            fast_model="fast",
+            strong_model="strong",
+        )
+        with patch("src.models.openai_compatible.urllib.request.urlopen", return_value=OversizedResponse()):
+            with self.assertRaises(ModelProtocolError):
+                client._request({"model": "fast"}, 1)
 
     def test_mock_model_is_deterministic_and_records_routing(self) -> None:
         client = MockModelClient({ModelTask.FAILURE_ANALYSIS: FAILURE_RESPONSE})
@@ -209,6 +273,20 @@ class ModelsLoggingTests(unittest.TestCase):
         self.assertNotIn("hidden", attributes["detail"])
         self.assertEqual(attributes["input_tokens"], 123)
         self.assertEqual(attributes["output_tokens"], 45)
+
+    def test_local_trace_redacts_nested_secrets_and_serializes_nonfinite_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "execution-trace.jsonl"
+            trace = TraceRecorder(path, "case-1")
+            trace.record(
+                "model",
+                "completed",
+                nested={"credential": "plain-secret", "score": float("nan")},
+            )
+            event = json.loads(path.read_text(encoding="utf-8"))
+        nested = event["attributes"]["nested"]
+        self.assertEqual(nested["credential"], "[REDACTED]")
+        self.assertEqual(nested["score"], "nan")
 
 
 if __name__ == "__main__":

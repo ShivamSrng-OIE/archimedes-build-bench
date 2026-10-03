@@ -61,10 +61,21 @@ def _read_bounded_log(path: Path) -> str:
 def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
     for name in _METADATA_NAMES:
         path = input_dir / name
-        if not path.is_file():
-            continue
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(input_dir.resolve(strict=True))
+            if not resolved.is_file():
+                continue
+            if resolved.stat().st_size > _MAX_METADATA_BYTES:
+                raise CaseFormatError(
+                    f"case metadata {path.name} exceeds {_MAX_METADATA_BYTES} bytes"
+                )
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            raise CaseFormatError(f"cannot inspect case metadata {path.name}: {exc}") from exc
+        try:
+            value = json.loads(resolved.read_text(encoding="utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
             raise CaseFormatError(f"cannot read case metadata {path.name}: {exc}") from exc
         if not isinstance(value, dict):

@@ -141,8 +141,16 @@ def _docker_checks(environment: dict[str, str]) -> list[Check]:
     checks = [Check("docker", info.returncode == 0, "Docker daemon is available" if info.returncode == 0 else "Docker daemon is unavailable")]
     images = {
         "agent_image": environment.get("BB_AGENT_IMAGE", "python:3.11.9-slim-bookworm"),
-        "validator_image": environment.get("BB_VALIDATOR_IMAGE", "buildbench-validator-runtime:v0"),
-        "example_assets_image": environment.get("BB_EXAMPLE_ASSETS_IMAGE", "buildbench-example-assets:v0"),
+        "validator_image": environment.get(
+            "BB_VALIDATOR_IMAGE",
+            "ghcr.io/terriyyy/buildbench-validator-runtime@sha256:"
+            "11151f88f6b12c578b9c9fafd0420d6da27c6969b5909aaa4c51e78dd9acd7c7",
+        ),
+        "example_assets_image": environment.get(
+            "BB_EXAMPLE_ASSETS_IMAGE",
+            "ghcr.io/terriyyy/buildbench-example-assets@sha256:"
+            "98bdf0f445cf0296f67ffc8b4601ab1cb1f82b957f84bd9739276f5659cdde54",
+        ),
         "cleanup_image": environment.get("BB_CLEANUP_IMAGE", "ubuntu:24.04"),
     }
     for name, image in images.items():

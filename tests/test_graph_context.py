@@ -39,6 +39,14 @@ class GraphContextTests(unittest.TestCase):
             self.assertIn("debian/rules", inventory.build_files)
             self.assertIn("debian/rules", inventory.packaging_files)
 
+    def test_inventory_file_limit_is_enforced_during_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            for index in range(5):
+                (repo / f"file-{index}.txt").write_text("x", encoding="utf-8")
+            inventory = inventory_repository(repo, max_files=2)
+            self.assertEqual(inventory.files, ["file-0.txt", "file-1.txt"])
+
     def test_delta_graph_traces_matching_hazard(self) -> None:
         identity = ArchitectureIdentity(Architecture.AARCH64, "aarch64", ["aarch64"])
         source = ArchitectureIdentity(Architecture.X86_64, "x86_64", ["x86_64"])

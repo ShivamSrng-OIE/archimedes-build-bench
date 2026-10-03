@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..schemas import Architecture, CaseData, FailureAnalysis, PlannedEdit, RepairFamily
+from ..workspace.repository_files import iter_repository_files
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,18 +21,14 @@ class DeterministicMatch:
 
 def _text_files(repo: Path) -> list[tuple[str, str]]:
     files: list[tuple[str, str]] = []
-    for path in sorted(repo.rglob("*")):
-        if len(files) >= 20_000:
-            continue
-        if any(part in {".git", ".hg", ".svn", "__pycache__", "node_modules"} for part in path.parts):
-            continue
+    for path in iter_repository_files(repo):
         try:
-            if path.is_symlink() or not path.is_file():
+            if path.stat().st_size > 2_000_000:
                 continue
             data = path.read_bytes()
         except OSError:
             continue
-        if len(data) > 2_000_000 or b"\0" in data[:8192]:
+        if b"\0" in data[:8192]:
             continue
         try:
             text = data.decode("utf-8")

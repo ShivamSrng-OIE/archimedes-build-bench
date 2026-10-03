@@ -89,7 +89,7 @@ _NON_CAUSAL = (
     re.compile(r":\s*note:.*may have been intended to silence earlier diagnostics", re.I),
     re.compile(
         r"^(?:\|\s*)?[-A-Za-z0-9_+.]+:\s+error:\s+unrecognized command-line "
-        r"option\s+['\"â€˜â€™]-(?:V|qversion|version)['\"â€˜â€™]",
+        r"option\s+['\"‘’]-(?:V|qversion|version)['\"‘’]",
         re.I,
     ),
     re.compile(r"^(?:\|\s*)?[-A-Za-z0-9_+.]+:\s+fatal error:\s+no input files\s*$", re.I),

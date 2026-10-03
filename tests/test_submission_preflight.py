@@ -14,9 +14,16 @@ from dev.submission_preflight import (
     _model_checks,
 )
 from runner.agent_submission import create_deterministic_zip
+from src.constants import AGENT_VERSION
+
+from . import AGENT
 
 
 class SubmissionPreflightTests(unittest.TestCase):
+    def test_runtime_version_matches_submission_manifest(self) -> None:
+        manifest = (AGENT / "agent.yaml").read_text(encoding="utf-8")
+        self.assertIn(f'version: "{AGENT_VERSION}"', manifest)
+
     def test_manual_model_access_gate_is_distinct_from_model_configuration(self) -> None:
         configured = _model_checks({
             "ARCHIMEDES_MODEL_BACKEND": "local_openai_compatible",

@@ -151,6 +151,13 @@ class ForensicsArchitectureTests(unittest.TestCase):
         self.assertIn("-fno-cf-protection", analysis.primary_diagnostic)
         self.assertEqual(analysis.frontier.stage, FrontierStage.COMPILE)
 
+    def test_release_log_ignores_curly_quoted_compiler_version_probe(self) -> None:
+        analysis = analyze_build_log(
+            "gcc: error: unrecognized command-line option ‘-qversion’\n"
+            "src/portable.c:12: error: unsupported target architecture\n"
+        )
+        self.assertIn("unsupported target architecture", analysis.primary_diagnostic)
+
     def test_release_log_ignores_autoconf_conftest_failures(self) -> None:
         analysis = analyze_build_log(
             "| conftest.c:49:10: fatal error: minix/config.h: No such file or directory\n"

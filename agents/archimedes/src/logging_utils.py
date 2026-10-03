@@ -7,7 +7,9 @@ import re
 
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+"),
-    re.compile(r"(?i)((?:api[_-]?key|token|password)\s*[=:]\s*)[^\s&]+"),
+    re.compile(
+        r"(?i)((?:api[_-]?key|token|password|credential|secret)\s*[=:]\s*)[^\s&,}]+"
+    ),
     re.compile(r"([?&](?:api[_-]?key|token)=)[^&\s]+", re.IGNORECASE),
 )
 

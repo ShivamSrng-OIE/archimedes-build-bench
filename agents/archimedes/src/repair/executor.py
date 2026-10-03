@@ -102,6 +102,8 @@ def apply_candidate(candidate: PatchCandidate, path_policy: PathPolicy) -> EditT
             raise PatchValidationError("multiple operations on one file require pre-composition")
         seen.add(path)
         before = path.read_bytes() if path.exists() else None
+        if creating and before is not None:
+            raise PatchValidationError(f"create_file target already exists: {edit.path}")
         if edit.expected_hash and sha256(before or b"") != edit.expected_hash.lower():
             raise PatchValidationError(f"file hash changed before edit: {edit.path}")
         original = _decode_text(before or b"", path)

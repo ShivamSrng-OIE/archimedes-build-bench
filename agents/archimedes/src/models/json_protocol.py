@@ -21,6 +21,10 @@ _REQUIRED_KEYS: dict[ModelTask, set[str]] = {
 _ALLOWED_EDIT_OPERATIONS = {"replace_lines", "insert_before", "insert_after", "create_file"}
 
 
+def _reject_nonfinite_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number is not allowed: {value}")
+
+
 def _object_from_text(raw: str) -> dict[str, JSONValue]:
     stripped = raw.strip()
     if stripped.startswith("```"):
@@ -31,8 +35,8 @@ def _object_from_text(raw: str) -> dict[str, JSONValue]:
         candidates.append(stripped[start : end + 1])
     for candidate in candidates:
         try:
-            value = json.loads(candidate)
-        except json.JSONDecodeError:
+            value = json.loads(candidate, parse_constant=_reject_nonfinite_constant)
+        except (json.JSONDecodeError, ValueError):
             continue
         if isinstance(value, dict):
             return value
@@ -45,9 +49,42 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
     missing = _REQUIRED_KEYS[task] - value.keys()
     if missing:
         raise ModelProtocolError(f"model response missing required keys: {sorted(missing)}")
+    if task is ModelTask.FAILURE_ANALYSIS:
+        if not all(
+            isinstance(value.get(key), str) and str(value.get(key)).strip()
+            for key in ("primary_failure", "failure_stage")
+        ):
+            raise ModelProtocolError(
+                "failure analysis primary_failure and failure_stage must be non-empty strings"
+            )
+        claims = value.get("claims")
+        hypotheses = value.get("hypotheses")
+        recommended_files = value.get("recommended_files")
+        if not isinstance(claims, list) or not all(
+            isinstance(item, dict)
+            and isinstance(item.get("statement"), str)
+            and bool(str(item.get("statement")).strip())
+            for item in claims
+        ):
+            raise ModelProtocolError(
+                "failure analysis claims must be objects with non-empty statement strings"
+            )
+        if not isinstance(hypotheses, list):
+            raise ModelProtocolError("failure analysis hypotheses must be an array")
+        if not isinstance(recommended_files, list) or not all(
+            isinstance(item, str) and item.strip() for item in recommended_files
+        ):
+            raise ModelProtocolError(
+                "failure analysis recommended_files must be repository-relative strings"
+            )
     if task is ModelTask.PATCH_PLANNING:
         edits = value.get("edits")
         assumptions = value.get("assumptions")
+        if not all(
+            isinstance(value.get(key), str) and str(value.get(key)).strip()
+            for key in ("repair_family", "rationale")
+        ):
+            raise ModelProtocolError("patch repair_family and rationale must be non-empty strings")
         if not isinstance(assumptions, list) or not assumptions or not all(
             isinstance(item, str) and item.strip() for item in assumptions
         ):

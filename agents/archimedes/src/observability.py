@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,17 +25,16 @@ _SAFE_TOKEN_TELEMETRY_KEYS = {
 
 
 def _safe_value(value: object) -> JSONValue:
-    if value is None or isinstance(value, (bool, int, float)):
+    if value is None or isinstance(value, (bool, int)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
     if isinstance(value, str):
         return redact_secrets(value)[:1000]
     if isinstance(value, (list, tuple)):
         return [_safe_value(item) for item in value[:50]]
     if isinstance(value, dict):
-        return {
-            str(key)[:100]: _safe_value(item)
-            for key, item in list(value.items())[:50]
-        }
+        return dict(_safe_attribute(key, item) for key, item in list(value.items())[:50])
     return redact_secrets(str(value))[:1000]
 
 

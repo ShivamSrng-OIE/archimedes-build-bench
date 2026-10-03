@@ -46,6 +46,14 @@ The frozen v0.2.11 bundle above has SHA-256
 for the `rocm-llvm` ARM64 Case in run `DV-20260921T154515Z-2ce55011` (passed on attempt 1).
 Keep this bundle distinct from the qualified Agent ZIP documented in `SUBMISSION.md`.
 
+The v0.2.12 regression replay is retained under
+`runs/development-replay-v0212-all-20261003`: all 200 released source Cases completed. The focused
+four-Case replay is under `runs/development-replay-v0212-audit-four`; its nine changed-file digests
+match the corresponding v0.2.11 validation candidates exactly. This establishes repair-output
+equivalence, not new organizer build evidence. Package a new Worktree Bundle from the focused replay
+only when a fresh Development Validation run is useful; never confuse that bundle with
+`dist/agent-submission-v0.2.12-ready.zip`.
+
 Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
 when comparing configurations. Change only one component for an ablation. The default runner does
 not execute package builds, so `verified_build_success` stays null; causal-location and repair-family

@@ -7,15 +7,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..constants import MAX_TEXT_FILE_BYTES
+from ..workspace.repository_files import MAX_REPOSITORY_FILES, iter_repository_files
 
 _BUILD_FILES = {
     "CMakeLists.txt", "Makefile", "configure", "configure.ac", "meson.build",
     "BUILD", "BUILD.bazel", "WORKSPACE", "Cargo.toml", "pyproject.toml", "setup.py",
     "rules", "configure.in", "meson_options.txt",
 }
-_SKIP = {".git", ".hg", ".svn", "node_modules", "__pycache__"}
-
-
 @dataclass(frozen=True, slots=True)
 class SearchSnippet:
     path: str
@@ -41,16 +39,7 @@ def inventory_repository(repo: Path, *, max_files: int = 20_000) -> RepositoryIn
     """Create sorted structural context without following external symlink content."""
     inventory = RepositoryInventory()
     dirs: set[str] = set()
-    for path in sorted(repo.rglob("*")):
-        if len(inventory.files) >= max_files:
-            break
-        if any(part in _SKIP for part in path.parts):
-            continue
-        try:
-            if path.is_symlink() or not path.is_file():
-                continue
-        except OSError:
-            continue
+    for path in iter_repository_files(repo, max_files=max_files):
         relative = path.relative_to(repo).as_posix()
         inventory.files.append(relative)
         suffix = path.suffix.lower() or "<none>"
@@ -78,14 +67,10 @@ def search_regex(
     """Return bounded source windows for a caller-supplied regular expression."""
     regex = re.compile(pattern, re.I)
     results: list[SearchSnippet] = []
-    for path in sorted(repo.rglob("*")):
+    for path in iter_repository_files(repo, max_files=MAX_REPOSITORY_FILES):
         if len(results) >= max_results:
             break
-        if any(part in _SKIP for part in path.parts):
-            continue
         try:
-            if path.is_symlink() or not path.is_file():
-                continue
             if path.stat().st_size > MAX_TEXT_FILE_BYTES:
                 continue
             data = path.read_bytes()

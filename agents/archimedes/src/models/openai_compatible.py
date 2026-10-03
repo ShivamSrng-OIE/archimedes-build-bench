@@ -13,6 +13,32 @@ from .base import ModelResponse, ModelTask, ModelTier
 from .json_protocol import parse_model_json
 
 
+_MAX_RESPONSE_BYTES = 5_000_000
+
+
+def _reject_nonfinite_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number is not allowed: {value}")
+
+
+def _usage_tokens(value: JSONValue, fallback_characters: int) -> int:
+    """Accept only exact non-negative token counts; otherwise use a safe estimate."""
+    fallback = max(1, fallback_characters // 4)
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, int):
+        return value if value >= 0 else fallback
+    if isinstance(value, float):
+        return int(value) if value >= 0 and value.is_integer() else fallback
+    if isinstance(value, str):
+        stripped = value.strip()
+        return (
+            int(stripped)
+            if len(stripped) <= 20 and stripped.isascii() and stripped.isdecimal()
+            else fallback
+        )
+    return fallback
+
+
 class OpenAICompatibleModelClient:
     def __init__(self, *, base_url: str, api_key: str | None, fast_model: str, strong_model: str):
         self._base_url = base_url.rstrip("/")
@@ -29,12 +55,16 @@ class OpenAICompatibleModelClient:
         )
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                body = response.read(5_000_000)
+                body = response.read(_MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise ModelError(f"OpenAI-compatible request failed: {type(exc).__name__}") from exc
+        if len(body) > _MAX_RESPONSE_BYTES:
+            raise ModelProtocolError("provider response exceeds the maximum allowed size")
         try:
-            result = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            result = json.loads(
+                body.decode("utf-8"), parse_constant=_reject_nonfinite_constant
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             raise ModelProtocolError("provider response is not valid UTF-8 JSON") from exc
         if not isinstance(result, dict):
             raise ModelProtocolError("provider response root must be an object")
@@ -71,6 +101,7 @@ class OpenAICompatibleModelClient:
         payload: dict[str, JSONValue] = {
             "model": model,
             "temperature": 0,
+            "max_tokens": 1000,
             "response_format": {"type": "json_object"},
             "messages": messages,
         }
@@ -107,16 +138,8 @@ class OpenAICompatibleModelClient:
             usage = item.get("usage", {})
             input_value = usage.get("prompt_tokens") if isinstance(usage, dict) else None
             output_value = usage.get("completion_tokens") if isinstance(usage, dict) else None
-            input_tokens += (
-                int(input_value)
-                if isinstance(input_value, (str, int, float))
-                else max(1, input_characters // 4)
-            )
-            output_tokens += (
-                int(output_value)
-                if isinstance(output_value, (str, int, float))
-                else max(1, output_characters // 4)
-            )
+            input_tokens += _usage_tokens(input_value, input_characters)
+            output_tokens += _usage_tokens(output_value, output_characters)
         return ModelResponse(
             parsed,
             raw,

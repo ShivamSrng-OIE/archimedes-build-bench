@@ -337,18 +337,37 @@ class RepairController:
                 continue
             try:
                 path = self.path_policy.validate_relative(relative)
+                if path.stat().st_size > MAX_TEXT_FILE_BYTES:
+                    continue
                 data = path.read_bytes()
             except (OSError, UnicodeError, PathPolicyError):
                 continue
-            if len(data) > MAX_TEXT_FILE_BYTES or b"\0" in data[:8192]:
+            if b"\0" in data[:8192]:
                 continue
             try:
                 text = data.decode("utf-8")
             except UnicodeError:
                 continue
+            lines = text.splitlines()
+            line_start = 1
+            line_end = min(160, len(lines))
+            if relative == failure.frontier.primary_file:
+                escaped = re.escape(relative).replace(r"/", r"[\\/]")
+                location = re.search(
+                    rf"(?:^|[\s'\"])(?:\./)?{escaped}:(?P<line>[1-9][0-9]*)",
+                    failure.primary_diagnostic,
+                )
+                if location is not None:
+                    causal_line = int(location.group("line"))
+                    line_start = max(1, causal_line - 79)
+                    line_end = min(len(lines), causal_line + 80)
             snippets.append(SearchSnippet(
-                relative, 1, min(160, text.count("\n") + 1),
-                "\n".join(text.splitlines()[:160]), "validated causal/model-selected file", 1.0,
+                relative,
+                line_start,
+                line_end,
+                "\n".join(lines[line_start - 1 : line_end]),
+                "validated causal/model-selected file",
+                1.0,
             ))
         return select_snippets(snippets, max_characters=24_000)
 

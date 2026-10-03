@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from src.constants import MAX_LOG_CHARACTERS
+from src.errors import CaseFormatError
 from src.schemas import Architecture
 from src.workspace.case_loader import load_case
 from src.workspace.paths import WorkspacePaths
@@ -97,6 +98,14 @@ class CaseLoaderTests(unittest.TestCase):
             self.assertIn("middle of oversized build log omitted", case.build_log)
             self.assertIn("unsupported target architecture", case.build_log)
             self.assertLessEqual(len(case.build_log), MAX_LOG_CHARACTERS + 100)
+
+    def test_oversized_metadata_is_rejected_before_json_parsing(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            paths = self._workspace(root)
+            (paths.input / "case.json").write_bytes(b" " * 1_000_001)
+            with self.assertRaises(CaseFormatError):
+                load_case(paths)
 
     def test_recovers_released_identity_when_runner_task_omits_it(self) -> None:
         with tempfile.TemporaryDirectory() as name:

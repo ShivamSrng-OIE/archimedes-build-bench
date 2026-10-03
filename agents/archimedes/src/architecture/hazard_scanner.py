@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..constants import MAX_TEXT_FILE_BYTES
+from ..workspace.repository_files import iter_repository_files
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,9 +29,6 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], float], ...] = (
     ("abi_assumption", re.compile(r"sizeof\s*\(\s*(?:long|void\s*\*)\s*\)|__int128|(?:little|big)[_-]?endian|atomic.*(?:32|64|128)", re.I), 0.68),
 )
 
-_SKIP_PARTS = {".git", ".hg", ".svn", "node_modules", "__pycache__"}
-
-
 def _is_probably_binary(data: bytes) -> bool:
     return b"\x00" in data[:8192]
 
@@ -38,14 +36,10 @@ def _is_probably_binary(data: bytes) -> bool:
 def scan_architecture_hazards(repo: Path, *, max_results: int = 300) -> list[ArchitectureHazard]:
     """Scan regular text files deterministically without executing repository content."""
     hazards: list[ArchitectureHazard] = []
-    for path in sorted(repo.rglob("*")):
+    for path in iter_repository_files(repo):
         if len(hazards) >= max_results:
             break
-        if any(part in _SKIP_PARTS for part in path.parts):
-            continue
         try:
-            if not path.is_file():
-                continue
             if path.stat().st_size > MAX_TEXT_FILE_BYTES:
                 continue
             data = path.read_bytes()

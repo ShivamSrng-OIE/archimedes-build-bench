@@ -7,7 +7,7 @@ portable software repair. No benchmark-performance claim is made by this impleme
 
 ## Competition execution model
 
-The agent follows Build-Bench Starter Kit `0.1.0-rc.2`. It expects `BB_WORKSPACE` to name a
+The agent follows Build-Bench Starter Kit `0.1.0-rc.3`. It expects `BB_WORKSPACE` to name a
 workspace with read-only-style `input/`, the only
 editable package tree at `work/repo/`, and writable `output/`. If the variable is absent, the
 official protocol default is `/workspace`. `python -m src.main` runs exactly one case and writes
@@ -68,6 +68,15 @@ failure and every legacy COMGR source signature are present. The generator,
 public API, implementation, and cache consumer are changed atomically; an
 incomplete source shape fails closed and retains only the evidenced multiarch
 path repair.
+
+Version 0.2.12 preserves those qualified repair results while hardening the
+general runtime. Repository traversal is now deterministic, symlink-safe, and
+bounded during enumeration rather than after materializing a complete tree.
+Metadata, source context, provider responses, numeric configuration, token
+usage, workspace paths, and file-creation preconditions fail closed on malformed
+or oversized inputs. Model context centers the compiler-reported causal line in
+deep source files, diagnostic probes execute the discovered trusted binary, and
+provider completions are capped at 1,000 tokens.
 
 ## System architecture
 
@@ -252,8 +261,8 @@ records commit, UTC timestamp, seed, model identifier, feature configuration, an
 
 Important current limitations:
 
-- The latest published Starter Kit remains `0.1.0-rc.2`. The public Development Cases are `v0.1`,
-  while separate protocol-schema and runtime-image releases remain unpublished.
+- The latest published Starter Kit is `0.1.0-rc.3`. The public Development Cases are `v0.1`;
+  the final competition protocol, credential delivery, and resource policy remain unpublished.
 - As of the 7 September 2026 CSTCloud audit, Full Evaluation is disabled and the official
   network/API-key injection policy, final runtime budgets, resource limits, score denominator,
   rerun limits, and credential mechanism remain unpublished.

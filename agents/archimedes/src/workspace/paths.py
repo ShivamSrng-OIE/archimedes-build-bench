@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from ..errors import WorkspaceError
@@ -24,7 +25,10 @@ class WorkspacePaths:
         The input and work/repo directories must already exist. Only output and its
         probe subdirectory may be created by this abstraction.
         """
-        resolved = root.expanduser().resolve(strict=False)
+        try:
+            resolved = root.expanduser().resolve(strict=True)
+        except OSError as exc:
+            raise WorkspaceError(f"workspace root is unavailable: {root}") from exc
         paths = cls(
             root=resolved,
             input=resolved / "input",
@@ -37,7 +41,28 @@ class WorkspacePaths:
             raise WorkspaceError(f"workspace input directory is missing: {paths.input}")
         if not paths.repo.is_dir():
             raise WorkspaceError(f"workspace repository is missing: {paths.repo}")
+        for label, path in (("input", paths.input), ("repository", paths.repo)):
+            try:
+                target = path.resolve(strict=True)
+                if os.path.commonpath((str(resolved), str(target))) != str(resolved):
+                    raise WorkspaceError(f"workspace {label} escapes the workspace root: {path}")
+            except OSError as exc:
+                raise WorkspaceError(f"workspace {label} is unavailable: {path}") from exc
         if create_output:
-            paths.output.mkdir(parents=True, exist_ok=True)
-            paths.probe_temp.mkdir(parents=True, exist_ok=True)
+            if paths.output.is_symlink() or paths.probe_temp.is_symlink():
+                raise WorkspaceError("workspace output paths must not be symbolic links")
+            try:
+                paths.output.mkdir(parents=True, exist_ok=True)
+                paths.probe_temp.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise WorkspaceError(f"workspace output is unavailable: {paths.output}") from exc
+            for label, path in (("output", paths.output), ("probe output", paths.probe_temp)):
+                try:
+                    target = path.resolve(strict=True)
+                    if os.path.commonpath((str(resolved), str(target))) != str(resolved):
+                        raise WorkspaceError(
+                            f"workspace {label} escapes the workspace root: {path}"
+                        )
+                except OSError as exc:
+                    raise WorkspaceError(f"workspace {label} is unavailable: {path}") from exc
         return paths
