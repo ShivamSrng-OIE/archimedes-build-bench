@@ -1,7 +1,8 @@
 # Build-Bench submission and evaluation checklist for Archimedes
 
-Last submission-status check: **21 September 2026 UTC**. The detailed release/rules audit below
-is a historical **7 September 2026** snapshot; recheck live policy before Full Evaluation.
+Last submission-status check: **2 October 2026 EDT**. The detailed release/rules audit below
+is a historical **7 September 2026** snapshot; recheck live policy before organizer-run Full
+Evaluation.
 
 This checklist is subordinate to the current CSTCloud platform, versioned competition rules, and
 the Starter Kit used to create an upload. The former GitHub Pages site is no longer the operational
@@ -20,7 +21,7 @@ Official participant pages:
 - [Leaderboard](https://matrix.cstcloud.cn/build-bench/leaderboard.html)
 - [Contact](https://matrix.cstcloud.cn/build-bench/contact.html)
 
-## Current immutable submission (21 September 2026)
+## Current final submission (selected 2 October 2026)
 
 ```text
 Agent:          archimedes
@@ -28,6 +29,7 @@ Agent version:  0.2.11
 Submission ID:  20260921T155822Z-9f76439b
 Status:         Qualified
 Hosted Smoke:   hello succeeded (1/1); final clean-patch validation succeeded
+Final selection: Selected on 2 October 2026 at 11:41 PM EDT
 Source commit:  e23bb1a
 Archive:        dist/agent-submission-v0.2.11-ready.zip
 Archive bytes:  91,407
@@ -43,11 +45,13 @@ two runs, **not** a single four-case v0.2.11 run or a hidden-evaluation score. E
 under `runs/development-validation-DV-20260921T154515Z-2ce55011/` and
 `runs/submission-20260921T155822Z-9f76439b/`.
 
-The portal still disables `Start Full Evaluation` with `Full Evaluation is not enabled.` It shows
-zero full evaluations and no leaderboard rank. The qualified upload needs no replacement now.
-The organizer-controlled gate and unpublished real-model/network/credential policy remain to be
-resolved before a compliant Full Evaluation; the deterministic `hello` Smoke Test is not proof of
-real-model availability. Do not upload credentials into the Agent ZIP.
+The live portal records this exact immutable version as **Final version selected**. A clean reload
+preserved the selection, and the version-history row shows the same submission ID, qualified status,
+SHA-256 prefix, and Hosted Smoke result. No evaluation was started: the portal states that organizers
+will freeze the selected version and start Full Evaluation separately, and it still shows zero
+organizer evaluations and no leaderboard rank. The unpublished real-model/network/credential policy
+remains to be resolved before a compliant Full Evaluation; the deterministic `hello` Smoke Test is
+not proof of real-model availability. Do not upload credentials into the Agent ZIP.
 
 ## Historical qualification snapshot (7 September 2026)
 
@@ -240,11 +244,10 @@ Manual attestations in that command record external facts; they do not bypass an
 4. Review the retained entrypoint, dependency, workspace, result-schema, canonical-patch, permission,
    and build diagnostics.
 5. Treat any change as a new version and repeat packaging, digest comparison, and qualification.
-6. Start Full Evaluation only when the portal reports it enabled, the frozen operational policy is
-   published, real-model delivery is proven, and the Team intentionally chooses to spend its allowed
-   evaluation attempt.
-7. Before the final-selection deadline, explicitly select the qualified immutable version intended
-   for hidden evaluation. A later upload does not modify an active or completed evaluation snapshot.
+6. Keep the intended qualified immutable version selected before the final-selection deadline. The
+   organizer, not the participant, freezes the selection and starts Full Evaluation separately.
+7. If a material Agent change is made before the deadline, upload and qualify the new immutable
+   version, then explicitly replace the final selection; uploading alone does not select it.
 
 ## Reproducibility record
 

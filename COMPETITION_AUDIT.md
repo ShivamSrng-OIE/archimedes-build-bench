@@ -1,6 +1,6 @@
 # Build-Bench CSTCloud compliance audit - 2026-09-07
 
-## Status update - 21 September 2026
+## Status update - 2 October 2026
 
 This document's page-by-page rules and release details are the historical 7 September audit, not
 a fresh comprehensive re-audit. The current qualified immutable Agent is `archimedes` v0.2.11,
@@ -10,9 +10,12 @@ submission `20260921T155822Z-9f76439b`, archive
 and the Hosted Smoke Test passed 1/1. Development Validation run
 `DV-20260921T154515Z-2ce55011` passed the repaired `rocm-llvm` ARM64 target build and artifact
 verification; the corrected earlier run passed the other three selected Cases. These public
-results are not Full Evaluation or leaderboard evidence. The live My Submissions page still showed
-`Full Evaluation is not enabled`, zero full evaluations, and no rank. Real-model delivery and final
-policy must be verified when the organizer enables that phase. See `SUBMISSION.md` and the ignored
+results are not Full Evaluation or leaderboard evidence. On 2 October, the live My Submissions page
+recorded this exact v0.2.11 submission as the team's **Final version selected**; the selection
+persisted after a clean reload. No evaluation was started: the account still showed zero organizer
+evaluations and no rank, and the portal states that organizers will freeze the selected version and
+start Full Evaluation separately. Real-model delivery and final policy must be verified when the
+organizer begins that phase. See `SUBMISSION.md` and the ignored
 `runs/development-validation-DV-20260921T154515Z-2ce55011/RUN_EVIDENCE.md` for the current
 handoff.
 
