@@ -16,11 +16,21 @@ from ..architecture.semantic_anchor import extract_anchor, validate_anchor
 from ..build.feedback import BuildBudget, BuildFeedbackProvider, BuildFeedbackResult
 from ..config import ContextMode, RuntimeConfig
 from ..constants import MAX_TEXT_FILE_BYTES, PROTOCOL_VERSION, RELIABILITY
-from ..context.repository_search import SearchSnippet, inventory_repository, search_regex
+from ..context.repository_search import (
+    SearchSnippet,
+    inventory_repository,
+    search_regex,
+)
 from ..context.snippet_selector import select_snippets
 from ..evidence.confidence import claim_justifies_patch
 from ..evidence.ledger import EvidenceLedger
-from ..errors import BuildFeedbackError, BudgetExhaustedError, PathPolicyError
+from ..errors import (
+    BuildFeedbackError,
+    BudgetExhaustedError,
+    ModelError,
+    PatchValidationError,
+    PathPolicyError,
+)
 from ..forensics.frontier import FrontierMovement, compare_frontiers
 from ..forensics.log_parser import analyze_build_log
 from ..graph.builder import build_delta_graph
@@ -31,7 +41,7 @@ from ..models.base import ModelTask
 from ..models.prompts import system_prompt
 from ..models.router import EscalationSignals, ModelRouter
 from ..observability import TraceRecorder
-from ..repair.critic import passes_portability_critic
+from ..repair.critic import portability_findings, passes_portability_critic
 from ..repair.deterministic import match_deterministic_repair
 from ..repair.executor import EditTransaction, apply_candidate, rollback_transaction
 from ..repair.planner import (
@@ -39,12 +49,23 @@ from ..repair.planner import (
     deterministic_match_candidate,
     model_plan_candidate,
 )
-from ..repair.policy_critic import passes_policy_critic
+from ..repair.policy_critic import policy_findings, passes_policy_critic
 from ..result_writer import write_diagnostic
 from ..schemas import (
-    AgentResult, Architecture, ConsequenceLevel, EvidenceItem, EvidenceKind, FailureAnalysis,
-    HypothesisStatus, JSONValue, PatchCandidate, Probe, RepairAttempt, RepairDecision,
-    RepairFamily, SemanticAnchor,
+    AgentResult,
+    Architecture,
+    ConsequenceLevel,
+    EvidenceItem,
+    EvidenceKind,
+    FailureAnalysis,
+    HypothesisStatus,
+    JSONValue,
+    PatchCandidate,
+    Probe,
+    RepairAttempt,
+    RepairDecision,
+    RepairFamily,
+    SemanticAnchor,
 )
 from ..workspace.case_loader import load_case
 from ..workspace.path_policy import PathPolicy
@@ -120,7 +141,9 @@ class RepairController:
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
         ledger = EvidenceLedger()
-        architecture_known = case.target_architecture.canonical is not Architecture.UNKNOWN
+        architecture_known = (
+            case.target_architecture.canonical is not Architecture.UNKNOWN
+        )
         ledger.add_evidence(
             kind=EvidenceKind.PROVIDED_METADATA,
             summary=(
@@ -128,14 +151,18 @@ class RepairController:
                 if architecture_known
                 else "target architecture metadata is unknown"
             ),
-            reliability=RELIABILITY["provided_metadata"] if architecture_known else RELIABILITY["guess"],
+            reliability=RELIABILITY["provided_metadata"]
+            if architecture_known
+            else RELIABILITY["guess"],
             raw_excerpt=case.target_architecture.raw,
             source="case metadata",
             stage=ControllerStage.CASE_INGESTION.value,
         )
         if failure.primary_diagnostic:
             item = ledger.add_evidence(
-                kind=EvidenceKind.COMPILER_OUTPUT if failure.family.value == "compilation" else EvidenceKind.BUILD_LOG,
+                kind=EvidenceKind.COMPILER_OUTPUT
+                if failure.family.value == "compilation"
+                else EvidenceKind.BUILD_LOG,
                 summary="first causal build diagnostic",
                 reliability=RELIABILITY["compiler_diagnostic"],
                 raw_excerpt=failure.primary_diagnostic,
@@ -145,7 +172,9 @@ class RepairController:
             failure.evidence_ids.append(item.id)
         return ledger
 
-    def _record_hazards(self, ledger: EvidenceLedger, hazards: list[ArchitectureHazard]) -> None:
+    def _record_hazards(
+        self, ledger: EvidenceLedger, hazards: list[ArchitectureHazard]
+    ) -> None:
         for hazard in hazards:
             ledger.add_evidence(
                 kind=EvidenceKind.DIRECT_FILE_OBSERVATION,
@@ -196,20 +225,22 @@ class RepairController:
         from ..schemas import CaseData, FailureAnalysis
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
-        if case.target_architecture.canonical in {Architecture.UNKNOWN, Architecture.X86_64}:
+        if case.target_architecture.canonical in {
+            Architecture.UNKNOWN,
+            Architecture.X86_64,
+        }:
             return None
         diagnostic = failure.primary_diagnostic.lower()
-        hazard = next(
-            (
-                item for item in hazards
-                if item.category == "compiler_flag"
-                and item.matched_text.lower() in diagnostic
-                and re.search(r"-m(?:sse|avx)|-march=x86", item.matched_text, re.I)
-            ),
-            None,
-        )
-        if hazard is None:
+        matching_hazards = [
+            item
+            for item in hazards
+            if item.category == "compiler_flag"
+            and item.matched_text.lower() in diagnostic
+            and re.search(r"-m(?:sse|avx)|-march=x86", item.matched_text, re.I)
+        ]
+        if len(matching_hazards) != 1:
             return None
+        hazard = matching_hazards[0]
         anchor = next(
             (
                 item
@@ -224,7 +255,8 @@ class RepairController:
         ):
             return None
         file_evidence = next(
-            item for item in ledger.evidence.values()
+            item
+            for item in ledger.evidence.values()
             if item.path == hazard.path and item.line_start == hazard.line
         )
         log_evidence = self._latest_failure_evidence(ledger)
@@ -246,9 +278,7 @@ class RepairController:
             "the flag is an architecture-specific optimization declaration rather than package semantics",
             "semantic_preservation",
             supporting_evidence_ids=(
-                list(anchor.evidence_ids)
-                if anchor is not None
-                else [file_evidence.id]
+                list(anchor.evidence_ids) if anchor is not None else [file_evidence.id]
             ),
             consequence=ConsequenceLevel.HIGH,
         )
@@ -258,7 +288,11 @@ class RepairController:
             for item in claims
         ):
             return None
-        confidence = min(item.confidence for item in claims) if self.config.features.claim_confidence else 0.80
+        confidence = (
+            min(item.confidence for item in claims)
+            if self.config.features.claim_confidence
+            else 0.80
+        )
         return conditional_flag_candidate(
             case, hazard, claim_ids=[item.id for item in claims], confidence=confidence
         )
@@ -298,7 +332,11 @@ class RepairController:
             claim.confidence, claim.consequence_level, claim.status
         ):
             return None
-        confidence = claim.confidence if self.config.features.claim_confidence else match.confidence
+        confidence = (
+            claim.confidence
+            if self.config.features.claim_confidence
+            else match.confidence
+        )
         return deterministic_match_candidate(
             match,
             claim_ids=[claim.id],
@@ -306,9 +344,7 @@ class RepairController:
             current_frontier=failure.frontier.stage,
         )
 
-    def _model_file_context(
-        self, failure: object, recommended_files: object
-    ) -> str:
+    def _model_file_context(self, failure: object, recommended_files: object) -> str:
         """Read only a small validated set of model-recommended or causal files."""
         from ..schemas import FailureAnalysis
 
@@ -317,23 +353,30 @@ class RepairController:
         if failure.frontier.primary_file:
             requested.append(failure.frontier.primary_file)
         if isinstance(recommended_files, list):
-            requested.extend(value for value in recommended_files if isinstance(value, str))
+            requested.extend(
+                value for value in recommended_files if isinstance(value, str)
+            )
         inventory = inventory_repository(self.workspace.repo)
         requested.extend(inventory.build_files[:4])
         packaging = sorted(
             inventory.packaging_files,
             key=lambda path: (
-                0 if path == "debian/rules" else
-                1 if path == "debian/control" else
-                2 if path.endswith((".install", ".symbols", ".links", ".dirs")) else
-                3,
+                0
+                if path == "debian/rules"
+                else 1
+                if path == "debian/control"
+                else 2
+                if path.endswith((".install", ".symbols", ".links", ".dirs"))
+                else 3,
                 path,
             ),
         )
         requested.extend(packaging[:4])
         snippets: list[SearchSnippet] = []
         for relative in dict.fromkeys(requested):
-            if len(snippets) >= 8 or any(part.startswith(".") for part in relative.replace("\\", "/").split("/")):
+            if len(snippets) >= 8 or any(
+                part.startswith(".") for part in relative.replace("\\", "/").split("/")
+            ):
                 continue
             try:
                 path = self.path_policy.validate_relative(relative)
@@ -361,27 +404,35 @@ class RepairController:
                     causal_line = int(location.group("line"))
                     line_start = max(1, causal_line - 79)
                     line_end = min(len(lines), causal_line + 80)
-            snippets.append(SearchSnippet(
-                relative,
-                line_start,
-                line_end,
-                "\n".join(lines[line_start - 1 : line_end]),
-                "validated causal/model-selected file",
-                1.0,
-            ))
+            snippets.append(
+                SearchSnippet(
+                    relative,
+                    line_start,
+                    line_end,
+                    "\n".join(lines[line_start - 1 : line_end]),
+                    "validated causal/model-selected file",
+                    1.0,
+                )
+            )
         return select_snippets(snippets, max_characters=24_000)
 
     def _model_causal_findings(self, failure: object, candidate: object) -> list[str]:
         """Reject plans that add an alternative but leave a diagnosed flag active."""
         from ..schemas import FailureAnalysis, PatchCandidate
 
-        assert isinstance(failure, FailureAnalysis) and isinstance(candidate, PatchCandidate)
-        options = list(dict.fromkeys(re.findall(
-            r"(?<![A-Za-z0-9_])-(?:m(?:sse[0-9.]*|avx[0-9.]*|neon)\b|"
-            r"(?:march|mcpu|mtune|mabi|mfpu)=[^\s'\"`]+)",
-            failure.primary_diagnostic,
-            flags=re.I,
-        )))
+        assert isinstance(failure, FailureAnalysis) and isinstance(
+            candidate, PatchCandidate
+        )
+        options = list(
+            dict.fromkeys(
+                re.findall(
+                    r"(?<![A-Za-z0-9_])-(?:m(?:sse[0-9.]*|avx[0-9.]*|neon)\b|"
+                    r"(?:march|mcpu|mtune|mabi|mfpu)=[^\s'\"`]+)",
+                    failure.primary_diagnostic,
+                    flags=re.I,
+                )
+            )
+        )
         findings: list[str] = []
         guard_markers = ("ifneq", "ifeq", "if(", "#if", "check_c_compiler_flag")
         target_markers = (
@@ -489,14 +540,17 @@ class RepairController:
                     statement = value.get("statement")
                     assert isinstance(statement, str)
                     ledger.add_claim(
-                        statement, "llm_inference",
+                        statement,
+                        "llm_inference",
                         supporting_evidence_ids=[evidence.id],
                         consequence=ConsequenceLevel.MEDIUM,
                     )
                     model_claim_added = True
         if self.model_router.records:
             self.model_router.records[-1].changed_hypothesis = model_claim_added
-        context = self._model_file_context(failure, response.data.get("recommended_files"))
+        context = self._model_file_context(
+            failure, response.data.get("recommended_files")
+        )
         if not context:
             self._trace(
                 ControllerStage.REPAIR.value,
@@ -524,7 +578,8 @@ class RepairController:
                 system_prompt=system_prompt(ModelTask.PATCH_PLANNING),
                 user_prompt=plan_prompt,
                 signals=EscalationSignals(
-                    ood_without_evidence=case.target_architecture.canonical is Architecture.UNKNOWN
+                    ood_without_evidence=case.target_architecture.canonical
+                    is Architecture.UNKNOWN
                 ),
             )
             self._trace(
@@ -543,11 +598,18 @@ class RepairController:
                 path_policy=self.path_policy,
                 current_frontier=failure.frontier.stage,
             )
-            findings = (
-                self._model_causal_findings(failure, candidate)
-                if candidate is not None
-                else ["structured plan failed deterministic validation"]
-            )
+            if candidate is None:
+                findings = ["structured plan failed deterministic validation"]
+            else:
+                findings = sorted(
+                    set(
+                        [
+                            *self._model_causal_findings(failure, candidate),
+                            *portability_findings(candidate),
+                            *policy_findings(candidate, self.path_policy),
+                        ]
+                    )
+                )
             if not findings:
                 break
             self._trace(
@@ -615,7 +677,10 @@ class RepairController:
                 consequence=ConsequenceLevel.MEDIUM,
             )
             assumption_ids.append(assumption.id)
-        dependent_claims = [causal, *(ledger.claims[item_id] for item_id in assumption_ids)]
+        dependent_claims = [
+            causal,
+            *(ledger.claims[item_id] for item_id in assumption_ids),
+        ]
         if not all(
             claim_justifies_patch(item.confidence, item.consequence_level, item.status)
             for item in dependent_claims
@@ -659,7 +724,10 @@ class RepairController:
         from ..schemas import FailureAnalysis
 
         assert isinstance(failure, FailureAnalysis)
-        if not self.config.features.active_probes or "atomic" not in failure.primary_diagnostic.lower():
+        if (
+            not self.config.features.active_probes
+            or "atomic" not in failure.primary_diagnostic.lower()
+        ):
             return
         probe = Probe(
             id="probe-001",
@@ -719,11 +787,21 @@ class RepairController:
             if candidate is not None and candidate.repair_family in excluded:
                 candidate = None
             if candidate is None:
-                candidate = self._flag_candidate(case, failure, hazards, anchors, ledger)
+                candidate = self._flag_candidate(
+                    case, failure, hazards, anchors, ledger
+                )
                 if candidate is not None and candidate.repair_family in excluded:
                     candidate = None
         if candidate is None and self.model_router is not None:
-            candidate = self._consult_model_if_configured(case, failure, ledger)
+            try:
+                candidate = self._consult_model_if_configured(case, failure, ledger)
+            except (ModelError, BudgetExhaustedError) as exc:
+                self._trace(
+                    ControllerStage.REPAIR.value,
+                    "model_unavailable",
+                    error_type=type(exc).__name__,
+                )
+                candidate = None
             if candidate is not None and candidate.repair_family in excluded:
                 self._trace(
                     ControllerStage.REPAIR.value,
@@ -769,7 +847,8 @@ class RepairController:
         if self.model_router is None or not candidate_id.startswith("candidate-model-"):
             return
         record = next(
-            (item for item in reversed(self.model_router.records) if item.caused_patch), None
+            (item for item in reversed(self.model_router.records) if item.caused_patch),
+            None,
         )
         if record is not None:
             record.improved_frontier = movement in {
@@ -784,7 +863,9 @@ class RepairController:
         """Compare experiments with or without the ordered-frontier research component."""
         from ..schemas import FailureFrontier
 
-        assert isinstance(before, FailureFrontier) and isinstance(after, FailureFrontier)
+        assert isinstance(before, FailureFrontier) and isinstance(
+            after, FailureFrontier
+        )
         if success:
             return FrontierMovement.SUCCESS
         if self.config.features.failure_frontier:
@@ -809,7 +890,9 @@ class RepairController:
             target_architecture=case.target_architecture.raw,
             model_backend=self.config.model_backend.value,
         )
-        metrics = CaseMetrics(case.case_id, case.source_architecture.raw, case.target_architecture.raw)
+        metrics = CaseMetrics(
+            case.case_id, case.source_architecture.raw, case.target_architecture.raw
+        )
         episode = EpisodeMemory()
         inventory = inventory_repository(self.workspace.repo)
         self._trace(
@@ -829,13 +912,17 @@ class RepairController:
         )
         metrics.failure_family = failure.family.value
         metrics.initial_frontier = (
-            int(failure.frontier.stage)
-            if self.config.features.failure_frontier
-            else -1
+            int(failure.frontier.stage) if self.config.features.failure_frontier else -1
         )
         metrics.best_frontier = metrics.initial_frontier
         ledger = self._seed_ledger(case, failure)
-        log_event(self.logger, "forensics", "primary failure identified", frontier=failure.frontier.stage.name.lower(), confidence=failure.frontier.confidence)
+        log_event(
+            self.logger,
+            "forensics",
+            "primary failure identified",
+            frontier=failure.frontier.stage.name.lower(),
+            confidence=failure.frontier.confidence,
+        )
 
         hazards = (
             scan_architecture_hazards(self.workspace.repo)
@@ -851,13 +938,18 @@ class RepairController:
         self._record_hazards(ledger, hazards)
         anchors = self._semantic_anchors(ledger, hazards)
         metrics.semantic_anchor_count = len(anchors)
-        profile = construct_profile(case.target_architecture, list(ledger.evidence.values()))
+        profile = construct_profile(
+            case.target_architecture, list(ledger.evidence.values())
+        )
         familiarity = assess_familiarity(
             profile,
             repository_coverage=min(1.0, len(hazards) / 5),
             portable_rule_coverage=0.8 if hazards else 0.0,
         )
-        if familiarity.requires_discovery and self.config.features.architecture_discovery:
+        if (
+            familiarity.requires_discovery
+            and self.config.features.architecture_discovery
+        ):
             discover_from_static_evidence(profile, case, hazards)
         metrics.familiarity_score = familiarity.score
         self._transition(
@@ -867,26 +959,43 @@ class RepairController:
             discovery_required=familiarity.requires_discovery,
             ood_signals=profile.ood_signals,
         )
-        log_event(self.logger, "architecture", "familiarity assessed", target=case.target_architecture.raw, score=familiarity.score, discovery=familiarity.requires_discovery)
+        log_event(
+            self.logger,
+            "architecture",
+            "familiarity assessed",
+            target=case.target_architecture.raw,
+            score=familiarity.score,
+            discovery=familiarity.requires_discovery,
+        )
 
-        graph = build_delta_graph(case, failure, hazards) if self.config.features.delta_graph else None
+        graph = (
+            build_delta_graph(case, failure, hazards)
+            if self.config.features.delta_graph
+            else None
+        )
         hypotheses = generate_initial_hypotheses(failure, hazards)
         self._transition(
             ControllerStage.HYPOTHESES.value,
             hypothesis_count=len(hypotheses.hypotheses),
-            top_hypothesis=(hypotheses.ranked()[0].id if hypotheses.hypotheses else None),
+            top_hypothesis=(
+                hypotheses.ranked()[0].id if hypotheses.hypotheses else None
+            ),
             graph_nodes=(len(graph.nodes) if graph else 0),
-            graph_edges=(sum(len(edges) for edges in graph.adjacency.values()) if graph else 0),
+            graph_edges=(
+                sum(len(edges) for edges in graph.adjacency.values()) if graph else 0
+            ),
         )
         episode.hypotheses = hypotheses.ranked()
         metrics.hypothesis_count = len(hypotheses.hypotheses)
         self._run_cheap_probe(failure=failure, episode=episode, ledger=ledger)
         metrics.probe_count = len(episode.probes)
-        episode.observations.extend((
-            f"files={len(inventory.files)} build_files={len(inventory.build_files)}",
-            f"failure={failure.primary_diagnostic}",
-            f"hazards={len(hazards)} familiarity={familiarity.score}",
-        ))
+        episode.observations.extend(
+            (
+                f"files={len(inventory.files)} build_files={len(inventory.build_files)}",
+                f"failure={failure.primary_diagnostic}",
+                f"hazards={len(hazards)} familiarity={familiarity.score}",
+            )
+        )
 
         current_failure = failure
         current_hazards = hazards
@@ -900,8 +1009,12 @@ class RepairController:
         contradicted_families: set[RepairFamily] = set()
         retained_transactions: list[EditTransaction] = []
         modified: list[str] = []
-        message = "Analysis completed; no evidence-supported safe repair was identified."
-        while candidate is not None and metrics.attempts < self.config.max_repair_attempts:
+        message = (
+            "Analysis completed; no evidence-supported safe repair was identified."
+        )
+        while (
+            candidate is not None and metrics.attempts < self.config.max_repair_attempts
+        ):
             ranked = rank_candidates([candidate])
             selected = ranked[0]
             portability_accepted = passes_portability_critic(selected)
@@ -931,7 +1044,18 @@ class RepairController:
             )
             before_frontier = current_failure.frontier
             before_signature = current_failure.frontier.error_signature
-            transaction = apply_candidate(selected, self.path_policy)
+            try:
+                transaction = apply_candidate(selected, self.path_policy)
+            except PatchValidationError as exc:
+                metrics.invalid_patch_count += 1
+                message = "Candidate failed an atomic edit precondition; no partial repair was retained."
+                self._trace(
+                    ControllerStage.REPAIR.value,
+                    "candidate_application_failed",
+                    candidate_id=selected.id,
+                    error_type=type(exc).__name__,
+                )
+                break
             self._mark_model_patch_applied(selected.id)
             attempted_paths = sorted(edit.relative_path for edit in transaction.edits)
             self._trace(
@@ -953,7 +1077,10 @@ class RepairController:
             build_feedback_error: str | None = None
             should_continue = False
             should_retain = True
-            if self.build_feedback.available and selected.expected_information_gain_if_built > 0.20:
+            if (
+                self.build_feedback.available
+                and selected.expected_information_gain_if_built > 0.20
+            ):
                 self._transition(
                     ControllerStage.BUILD.value,
                     candidate_id=selected.id,
@@ -998,7 +1125,10 @@ class RepairController:
                         metrics.best_frontier = max(
                             metrics.best_frontier, int(feedback.frontier.stage)
                         )
-                    if movement in {FrontierMovement.REGRESSION, FrontierMovement.INEFFECTIVE}:
+                    if movement in {
+                        FrontierMovement.REGRESSION,
+                        FrontierMovement.INEFFECTIVE,
+                    }:
                         rollback_transaction(transaction)
                         metrics.rollback_count += 1
                         decision = RepairDecision.ROLLBACK
@@ -1063,20 +1193,22 @@ class RepairController:
                         should_continue = True
             if should_retain:
                 retained_transactions.append(transaction)
-            episode.attempts.append(RepairAttempt(
-                metrics.attempts,
-                selected.id,
-                before_frontier,
-                after_frontier,
-                before_signature,
-                after_frontier.error_signature if after_frontier else None,
-                attempted_paths,
-                build_requested,
-                build_result,
-                None,
-                0.0,
-                decision,
-            ))
+            episode.attempts.append(
+                RepairAttempt(
+                    metrics.attempts,
+                    selected.id,
+                    before_frontier,
+                    after_frontier,
+                    before_signature,
+                    after_frontier.error_signature if after_frontier else None,
+                    attempted_paths,
+                    build_requested,
+                    build_result,
+                    None,
+                    0.0,
+                    decision,
+                )
+            )
             if not self.build_feedback.available:
                 message = "Applied one evidence-supported repair; official build feedback was unavailable."
                 break
@@ -1086,14 +1218,24 @@ class RepairController:
                     "and the repair was preserved."
                 )
                 break
+            if not build_requested:
+                message = (
+                    "Applied one evidence-supported repair; build feedback was skipped because "
+                    "its expected information value was below the request threshold."
+                )
+                break
             if metrics.success:
-                message = f"Verified repair success after {metrics.attempts} attempt(s)."
+                message = (
+                    f"Verified repair success after {metrics.attempts} attempt(s)."
+                )
                 break
             if not should_continue:
                 message = f"Repair attempt {metrics.attempts} was rolled back after {build_result}."
                 break
             if metrics.attempts >= self.config.max_repair_attempts:
-                message = "Preserved the best progressing repair state at the attempt limit."
+                message = (
+                    "Preserved the best progressing repair state at the attempt limit."
+                )
                 break
             if self.build_budget.remaining == 0:
                 message = "Preserved the best progressing repair state at the build-request limit."
@@ -1109,15 +1251,24 @@ class RepairController:
             if candidate is None:
                 message = "Preserved repair progress; no further evidence-supported candidate was found."
                 break
-        if candidate is None and self.model_router is not None and metrics.attempts == 0:
-            message = "Analysis completed with model evidence; no validated edit was applied."
+        if (
+            candidate is None
+            and self.model_router is not None
+            and self.model_router.records
+            and metrics.attempts == 0
+        ):
+            message = (
+                "Analysis completed with model evidence; no validated edit was applied."
+            )
 
-        modified = sorted({
-            edit.relative_path
-            for transaction in retained_transactions
-            if transaction.committed
-            for edit in transaction.edits
-        })
+        modified = sorted(
+            {
+                edit.relative_path
+                for transaction in retained_transactions
+                if transaction.committed
+                for edit in transaction.edits
+            }
+        )
         metrics.modified_files = len(modified)
         metrics.patch_lines = sum(
             edit.changed_line_end - edit.changed_line_start + 1
@@ -1155,7 +1306,9 @@ class RepairController:
             "familiarity": familiarity,
             "hypotheses": hypotheses.hypotheses,
             "graph_nodes": len(graph.nodes) if graph else 0,
-            "graph_edges": sum(len(edges) for edges in graph.adjacency.values()) if graph else 0,
+            "graph_edges": sum(len(edges) for edges in graph.adjacency.values())
+            if graph
+            else 0,
             "semantic_anchors": [asdict(item) for item in anchors],
             "feature_flags": asdict(self.config.features),
             "build_feedback_available": self.build_feedback.available,
@@ -1167,11 +1320,18 @@ class RepairController:
                 else []
             ),
         }
-        write_diagnostic(self.workspace.output, "evidence-ledger.json", ledger.to_dict())
-        write_diagnostic(self.workspace.output, "architecture-constitution.json", constitution)
+        write_diagnostic(
+            self.workspace.output, "evidence-ledger.json", ledger.to_dict()
+        )
+        write_diagnostic(
+            self.workspace.output, "architecture-constitution.json", constitution
+        )
         write_diagnostic(self.workspace.output, "repair-episode.json", diagnostics)
         write_diagnostic(self.workspace.output, "metrics.json", metrics.to_dict())
         return ControllerOutcome(
             AgentResult(PROTOCOL_VERSION, "completed", message, modified),
-            metrics, ledger, constitution, episode,
+            metrics,
+            ledger,
+            constitution,
+            episode,
         )

@@ -6,19 +6,44 @@ import json
 import re
 
 from ..errors import ModelProtocolError
+from ..json_safety import reject_excessive_json_nesting
 from ..schemas import JSONValue
 from .base import ModelTask
 
 _REQUIRED_KEYS: dict[ModelTask, set[str]] = {
-    ModelTask.FAILURE_ANALYSIS: {"primary_failure", "failure_stage", "claims", "hypotheses", "recommended_files"},
-    ModelTask.SEMANTIC_ANCHOR: {"purpose", "inputs", "outputs", "side_effects", "invariants", "portable_alternatives"},
+    ModelTask.FAILURE_ANALYSIS: {
+        "primary_failure",
+        "failure_stage",
+        "claims",
+        "hypotheses",
+        "recommended_files",
+    },
+    ModelTask.SEMANTIC_ANCHOR: {
+        "purpose",
+        "inputs",
+        "outputs",
+        "side_effects",
+        "invariants",
+        "portable_alternatives",
+    },
     ModelTask.HYPOTHESIS_GENERATION: {"hypotheses"},
     ModelTask.HYPOTHESIS_RANKING: {"ranked_hypothesis_ids"},
     ModelTask.PATCH_PLANNING: {"repair_family", "rationale", "edits", "assumptions"},
     ModelTask.PATCH_CRITIQUE: {"accepted", "findings"},
-    ModelTask.POST_BUILD_REFLECTION: {"interpretation", "hypothesis_updates", "next_action"},
+    ModelTask.POST_BUILD_REFLECTION: {
+        "interpretation",
+        "hypothesis_updates",
+        "next_action",
+    },
 }
-_ALLOWED_EDIT_OPERATIONS = {"replace_lines", "insert_before", "insert_after", "create_file"}
+_ALLOWED_EDIT_OPERATIONS = {
+    "replace_lines",
+    "insert_before",
+    "insert_after",
+    "create_file",
+}
+_MAX_ANALYSIS_ITEMS = 50
+_MAX_PATCH_ASSUMPTIONS = 20
 
 
 def _reject_nonfinite_constant(value: str) -> None:
@@ -35,8 +60,9 @@ def _object_from_text(raw: str) -> dict[str, JSONValue]:
         candidates.append(stripped[start : end + 1])
     for candidate in candidates:
         try:
+            reject_excessive_json_nesting(candidate)
             value = json.loads(candidate, parse_constant=_reject_nonfinite_constant)
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError, RecursionError):
             continue
         if isinstance(value, dict):
             return value
@@ -48,7 +74,9 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
     value = _object_from_text(raw)
     missing = _REQUIRED_KEYS[task] - value.keys()
     if missing:
-        raise ModelProtocolError(f"model response missing required keys: {sorted(missing)}")
+        raise ModelProtocolError(
+            f"model response missing required keys: {sorted(missing)}"
+        )
     if task is ModelTask.FAILURE_ANALYSIS:
         if not all(
             isinstance(value.get(key), str) and str(value.get(key)).strip()
@@ -60,19 +88,29 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
         claims = value.get("claims")
         hypotheses = value.get("hypotheses")
         recommended_files = value.get("recommended_files")
-        if not isinstance(claims, list) or not all(
-            isinstance(item, dict)
-            and isinstance(item.get("statement"), str)
-            and bool(str(item.get("statement")).strip())
-            for item in claims
+        if (
+            not isinstance(claims, list)
+            or len(claims) > _MAX_ANALYSIS_ITEMS
+            or not all(
+                isinstance(item, dict)
+                and isinstance(item.get("statement"), str)
+                and bool(str(item.get("statement")).strip())
+                for item in claims
+            )
         ):
             raise ModelProtocolError(
                 "failure analysis claims must be objects with non-empty statement strings"
             )
-        if not isinstance(hypotheses, list):
-            raise ModelProtocolError("failure analysis hypotheses must be an array")
-        if not isinstance(recommended_files, list) or not all(
-            isinstance(item, str) and item.strip() for item in recommended_files
+        if not isinstance(hypotheses, list) or len(hypotheses) > _MAX_ANALYSIS_ITEMS:
+            raise ModelProtocolError(
+                "failure analysis hypotheses must be a bounded array"
+            )
+        if (
+            not isinstance(recommended_files, list)
+            or len(recommended_files) > _MAX_ANALYSIS_ITEMS
+            or not all(
+                isinstance(item, str) and item.strip() for item in recommended_files
+            )
         ):
             raise ModelProtocolError(
                 "failure analysis recommended_files must be repository-relative strings"
@@ -84,16 +122,30 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
             isinstance(value.get(key), str) and str(value.get(key)).strip()
             for key in ("repair_family", "rationale")
         ):
-            raise ModelProtocolError("patch repair_family and rationale must be non-empty strings")
-        if not isinstance(assumptions, list) or not assumptions or not all(
-            isinstance(item, str) and item.strip() for item in assumptions
+            raise ModelProtocolError(
+                "patch repair_family and rationale must be non-empty strings"
+            )
+        if (
+            not isinstance(assumptions, list)
+            or not assumptions
+            or len(assumptions) > _MAX_PATCH_ASSUMPTIONS
+            or not all(isinstance(item, str) and item.strip() for item in assumptions)
         ):
-            raise ModelProtocolError("patch assumptions must be a non-empty string array")
+            raise ModelProtocolError(
+                "patch assumptions must be a non-empty string array"
+            )
         if not isinstance(edits, list) or not 1 <= len(edits) <= 5:
-            raise ModelProtocolError("patch edits must contain between one and five operations")
+            raise ModelProtocolError(
+                "patch edits must contain between one and five operations"
+            )
         for edit in edits:
-            if not isinstance(edit, dict) or edit.get("operation") not in _ALLOWED_EDIT_OPERATIONS:
-                raise ModelProtocolError("patch contains an unknown or dangerous operation")
+            if (
+                not isinstance(edit, dict)
+                or edit.get("operation") not in _ALLOWED_EDIT_OPERATIONS
+            ):
+                raise ModelProtocolError(
+                    "patch contains an unknown or dangerous operation"
+                )
             if not all(
                 isinstance(edit.get(key), str) and edit.get(key)
                 for key in ("path", "replacement", "rationale")
@@ -104,5 +156,7 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
             if edit.get("operation") != "create_file" and not isinstance(
                 edit.get("expected_text"), str
             ):
-                raise ModelProtocolError("non-create patch edits require exact expected_text")
+                raise ModelProtocolError(
+                    "non-create patch edits require exact expected_text"
+                )
     return value

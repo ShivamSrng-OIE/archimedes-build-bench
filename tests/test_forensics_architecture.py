@@ -14,7 +14,11 @@ from src.architecture.semantic_anchor import extract_anchor, validate_anchor
 from src.context.repository_search import inventory_repository, search_regex
 from src.forensics.error_signature import normalize_error_signature
 from src.forensics.frontier import FrontierMovement, compare_frontiers
-from src.forensics.log_parser import analyze_build_log, identify_primary_file, normalize_log
+from src.forensics.log_parser import (
+    analyze_build_log,
+    identify_primary_file,
+    normalize_log,
+)
 from src.schemas import Architecture, FailureFrontier, FrontierStage, SemanticAnchor
 
 
@@ -43,8 +47,12 @@ class ForensicsArchitectureTests(unittest.TestCase):
 
     def test_architecture_aliases_and_unknown_raw_value(self) -> None:
         self.assertEqual(normalize_architecture("AMD64").canonical, Architecture.X86_64)
-        self.assertEqual(normalize_architecture("arm64").canonical, Architecture.AARCH64)
-        self.assertEqual(normalize_architecture("riscv64gc").canonical, Architecture.RISCV64)
+        self.assertEqual(
+            normalize_architecture("arm64").canonical, Architecture.AARCH64
+        )
+        self.assertEqual(
+            normalize_architecture("riscv64gc").canonical, Architecture.RISCV64
+        )
         unknown = normalize_architecture("loongarch64")
         self.assertEqual(unknown.canonical, Architecture.UNKNOWN)
         self.assertEqual(unknown.raw, "loongarch64")
@@ -62,7 +70,9 @@ class ForensicsArchitectureTests(unittest.TestCase):
         self.assertIn("-msse4.2", analysis.primary_diagnostic)
         self.assertEqual(analysis.frontier.stage, FrontierStage.COMPILE)
 
-    def test_release_log_ignores_zero_error_summary_and_selects_failed_test(self) -> None:
+    def test_release_log_ignores_zero_error_summary_and_selects_failed_test(
+        self,
+    ) -> None:
         raw = (
             "# ERROR: 0\n"
             "FAIL: tests/swig_perl\n"
@@ -73,7 +83,9 @@ class ForensicsArchitectureTests(unittest.TestCase):
         self.assertEqual(analysis.primary_diagnostic, "FAIL: tests/swig_perl")
         self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
 
-    def test_release_log_prefers_specific_packaging_path_over_dpkg_wrapper(self) -> None:
+    def test_release_log_prefers_specific_packaging_path_over_dpkg_wrapper(
+        self,
+    ) -> None:
         raw = (
             "chmod: cannot access 'debian/node-re2/usr/lib/x86_64-linux-gnu/nodejs/tool.js': "
             "No such file or directory\n"
@@ -83,7 +95,10 @@ class ForensicsArchitectureTests(unittest.TestCase):
         analysis = analyze_build_log(raw)
         self.assertTrue(analysis.primary_diagnostic.startswith("chmod: cannot access"))
         self.assertEqual(analysis.frontier.stage, FrontierStage.PACKAGE)
-        self.assertEqual(analysis.frontier.primary_file, "debian/node-re2/usr/lib/x86_64-linux-gnu/nodejs/tool.js")
+        self.assertEqual(
+            analysis.frontier.primary_file,
+            "debian/node-re2/usr/lib/x86_64-linux-gnu/nodejs/tool.js",
+        )
 
     def test_release_log_ignores_latex_warning_before_test_assertion(self) -> None:
         raw = (
@@ -92,10 +107,15 @@ class ForensicsArchitectureTests(unittest.TestCase):
             "AssertionError: 132 != 0 : Got error code 132 back\n"
         )
         analysis = analyze_build_log(raw)
-        self.assertEqual(analysis.primary_diagnostic, "AssertionError: 132 != 0 : Got error code 132 back")
+        self.assertEqual(
+            analysis.primary_diagnostic,
+            "AssertionError: 132 != 0 : Got error code 132 back",
+        )
         self.assertEqual(analysis.frontier.stage, FrontierStage.TEST)
 
-    def test_release_log_does_not_treat_documentation_command_as_missing_tool(self) -> None:
+    def test_release_log_does_not_treat_documentation_command_as_missing_tool(
+        self,
+    ) -> None:
         analysis = analyze_build_log(
             "canvas.h:205: warning: argument 'cx' of command @param is not found in the "
             "argument list\n"
@@ -193,7 +213,9 @@ class ForensicsArchitectureTests(unittest.TestCase):
             "setup.py",
         )
         self.assertEqual(
-            identify_primary_file("make[1]: *** [debian/rules:28: override_dh_installdocs] Error 1"),
+            identify_primary_file(
+                "make[1]: *** [debian/rules:28: override_dh_installdocs] Error 1"
+            ),
             "debian/rules",
         )
 
@@ -236,7 +258,9 @@ class ForensicsArchitectureTests(unittest.TestCase):
         )
         self.assertEqual(analysis.frontier.primary_file, "src/arch.rs")
 
-    def test_release_log_prefers_compiler_error_over_echoed_compile_command(self) -> None:
+    def test_release_log_prefers_compiler_error_over_echoed_compile_command(
+        self,
+    ) -> None:
         analysis = analyze_build_log(
             "cd /<<PKGBUILDDIR>>/obj-aarch64-linux-gnu && /usr/bin/c++ "
             "-DERROR_LABEL=error -O2 -c source.c\n"
@@ -281,32 +305,68 @@ class ForensicsArchitectureTests(unittest.TestCase):
     def test_error_signature_removes_unstable_material(self) -> None:
         first = "C:/Temp/a123/file.c:42:9: error: bad value '-march=x86-64-v3'"
         second = "C:/Temp/b456/file.c:99:3: error: bad value '-march=x86-64-v3'"
-        self.assertEqual(normalize_error_signature(first), normalize_error_signature(second))
+        self.assertEqual(
+            normalize_error_signature(first), normalize_error_signature(second)
+        )
 
     def test_frontier_ordering(self) -> None:
         compile_failure = FailureFrontier(FrontierStage.COMPILE, "compile-a")
         link_failure = FailureFrontier(FrontierStage.LINK, "link-a")
         other_compile = FailureFrontier(FrontierStage.COMPILE, "compile-b")
-        self.assertEqual(compare_frontiers(compile_failure, link_failure), FrontierMovement.PROGRESS)
-        self.assertEqual(compare_frontiers(link_failure, compile_failure), FrontierMovement.REGRESSION)
-        self.assertEqual(compare_frontiers(compile_failure, other_compile), FrontierMovement.PARTIAL_PROGRESS)
-        self.assertEqual(compare_frontiers(compile_failure, compile_failure), FrontierMovement.INEFFECTIVE)
+        self.assertEqual(
+            compare_frontiers(compile_failure, link_failure), FrontierMovement.PROGRESS
+        )
+        self.assertEqual(
+            compare_frontiers(link_failure, compile_failure),
+            FrontierMovement.REGRESSION,
+        )
+        self.assertEqual(
+            compare_frontiers(compile_failure, other_compile),
+            FrontierMovement.PARTIAL_PROGRESS,
+        )
+        self.assertEqual(
+            compare_frontiers(compile_failure, compile_failure),
+            FrontierMovement.INEFFECTIVE,
+        )
 
     def test_hazard_scanner_finds_flags_intrinsics_assembly_and_abi(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
             (repo / "build.mk").write_text("CFLAGS += -mavx2\n", encoding="utf-8")
             (repo / "code.c").write_text(
-                "#include <immintrin.h>\nvoid f(void){ __asm__(\"pause\"); }\n"
-                "_Static_assert(sizeof(void *) == 8, \"width\");\n",
+                '#include <immintrin.h>\nvoid f(void){ __asm__("pause"); }\n'
+                '_Static_assert(sizeof(void *) == 8, "width");\n',
                 encoding="utf-8",
             )
             categories = {hazard.category for hazard in scan_architecture_hazards(repo)}
-            self.assertTrue({"compiler_flag", "intrinsic_header", "inline_assembly", "abi_assumption"} <= categories)
+            self.assertTrue(
+                {
+                    "compiler_flag",
+                    "intrinsic_header",
+                    "inline_assembly",
+                    "abi_assumption",
+                }
+                <= categories
+            )
+
+    def test_hazard_scanner_enforces_result_limit_within_one_file(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            (repo / "flags.mk").write_text(
+                "\n".join(f"CFLAGS_{index} += -mavx2" for index in range(1_000)),
+                encoding="utf-8",
+            )
+
+            hazards = scan_architecture_hazards(repo, max_results=7)
+
+            self.assertEqual(len(hazards), 7)
+            self.assertEqual([hazard.line for hazard in hazards], list(range(1, 8)))
 
     def test_unknown_architecture_has_lower_familiarity(self) -> None:
         known = assess_familiarity(construct_profile(normalize_architecture("aarch64")))
-        unknown = assess_familiarity(construct_profile(normalize_architecture("mystery128")))
+        unknown = assess_familiarity(
+            construct_profile(normalize_architecture("mystery128"))
+        )
         self.assertGreater(known.score, unknown.score)
         self.assertTrue(unknown.requires_discovery)
 

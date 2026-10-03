@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
+from pathlib import Path
 
 from .build.bb_build import BbBuildFeedbackProvider
 from .build.feedback import BuildFeedbackProvider
 from .build.unavailable import UnavailableBuildFeedbackProvider
 from .config import RuntimeConfig
-from .constants import PROTOCOL_VERSION
+from .constants import DEFAULT_WORKSPACE, PROTOCOL_VERSION
 from .errors import ArchimedesError
 from .logging_utils import configure_logging, log_event
 from .models.router import create_runtime_router
@@ -20,13 +22,41 @@ from .workspace.capabilities import CapabilityRegistry
 from .workspace.paths import WorkspacePaths
 
 
+def _write_terminal_diagnostic(
+    logger: logging.Logger,
+    workspace: WorkspacePaths | None,
+    *,
+    message: str,
+) -> None:
+    """Best-effort protocol diagnostic without masking the fatal process exit.
+
+    Protocol 0.1 supports ``completed`` as its portable result status. The
+    nonzero process exit remains the authoritative Agent-error signal.
+    """
+    if workspace is None:
+        return
+    try:
+        write_agent_result(
+            workspace.output,
+            AgentResult(PROTOCOL_VERSION, "completed", message, []),
+        )
+    except Exception:
+        logger.exception("[fatal] unable to write agent failure result")
+
+
 def run() -> int:
-    config = RuntimeConfig.from_environment()
-    configure_logging(config.log_level)
+    # Establish a safe logger and the protocol output location before parsing
+    # optional runtime settings. A malformed setting must still yield a
+    # structured agent-result.json whenever the official workspace is valid.
+    configure_logging("INFO")
     logger = logging.getLogger(__name__)
     workspace: WorkspacePaths | None = None
     try:
-        workspace = WorkspacePaths.resolve(config.workspace_root)
+        workspace = WorkspacePaths.resolve(
+            Path(os.getenv("BB_WORKSPACE", DEFAULT_WORKSPACE))
+        )
+        config = RuntimeConfig.from_environment()
+        configure_logging(config.log_level)
         capabilities = CapabilityRegistry.discover()
         build_feedback: BuildFeedbackProvider
         bb_build_path = capabilities.path("bb-build")
@@ -38,7 +68,12 @@ def run() -> int:
             )
         else:
             build_feedback = UnavailableBuildFeedbackProvider()
-        log_event(logger, "workspace", "capabilities discovered", count=len(capabilities.executables))
+        log_event(
+            logger,
+            "workspace",
+            "capabilities discovered",
+            count=len(capabilities.executables),
+        )
         controller = RepairController(
             config=config,
             workspace=workspace,
@@ -51,15 +86,13 @@ def run() -> int:
         return 0
     except ArchimedesError as exc:
         log_event(logger, "fatal", str(exc), error_type=type(exc).__name__)
-        if workspace is not None:
-            result = AgentResult(PROTOCOL_VERSION, "failed", str(exc), [])
-            write_agent_result(workspace.output, result)
+        _write_terminal_diagnostic(logger, workspace, message=str(exc))
         return 1
     except Exception:
         logger.exception("[fatal] unexpected internal error")
-        if workspace is not None:
-            result = AgentResult(PROTOCOL_VERSION, "failed", "Unexpected internal error.", [])
-            write_agent_result(workspace.output, result)
+        _write_terminal_diagnostic(
+            logger, workspace, message="Unexpected internal error."
+        )
         return 2
 
 

@@ -81,7 +81,20 @@ def _optional_float(name: str, minimum: float = 0.0) -> float | None:
 
 def _validated_base_url(raw: str, backend: ModelBackend) -> str:
     value = raw.strip().rstrip("/")
+    if any(
+        character.isspace() or ord(character) < 32 or ord(character) == 127
+        for character in value
+    ):
+        raise ConfigurationError(
+            "ARCHIMEDES_MODEL_BASE_URL must not contain whitespace or controls"
+        )
     parsed = urlsplit(value)
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ConfigurationError(
+            "ARCHIMEDES_MODEL_BASE_URL contains an invalid port"
+        ) from exc
     if (
         parsed.scheme not in {"http", "https"}
         or parsed.hostname is None
@@ -147,19 +160,27 @@ class RuntimeConfig:
         try:
             backend = ModelBackend(backend_raw)
         except ValueError as exc:
-            raise ConfigurationError(f"unsupported model backend: {backend_raw}") from exc
-        context_raw = os.getenv(
-            "ARCHIMEDES_CONTEXT_MODE", "archimedes_selected_context"
-        ).strip().lower()
+            raise ConfigurationError(
+                f"unsupported model backend: {backend_raw}"
+            ) from exc
+        context_raw = (
+            os.getenv("ARCHIMEDES_CONTEXT_MODE", "archimedes_selected_context")
+            .strip()
+            .lower()
+        )
         try:
             context_mode = ContextMode(context_raw)
         except ValueError as exc:
-            raise ConfigurationError(f"unsupported context mode: {context_raw}") from exc
+            raise ConfigurationError(
+                f"unsupported context mode: {context_raw}"
+            ) from exc
         tier_raw = os.getenv("ARCHIMEDES_MODEL_TIER", "auto").strip().lower()
         try:
             tier_mode = ModelTierMode(tier_raw)
         except ValueError as exc:
-            raise ConfigurationError(f"unsupported model tier mode: {tier_raw}") from exc
+            raise ConfigurationError(
+                f"unsupported model tier mode: {tier_raw}"
+            ) from exc
 
         base_url = _validated_base_url(
             os.getenv("ARCHIMEDES_MODEL_BASE_URL", "http://127.0.0.1:11434/v1"),
@@ -168,17 +189,25 @@ class RuntimeConfig:
         fast_model = os.getenv("ARCHIMEDES_FAST_MODEL", "mock-fast").strip()
         strong_model = os.getenv("ARCHIMEDES_STRONG_MODEL", "mock-strong").strip()
         if backend is not ModelBackend.MOCK and (not fast_model or not strong_model):
-            raise ConfigurationError("real model backends require non-empty model identifiers")
+            raise ConfigurationError(
+                "real model backends require non-empty model identifiers"
+            )
         max_cost = _optional_float("ARCHIMEDES_MAX_ESTIMATED_COST_USD")
         input_rate = _optional_float("ARCHIMEDES_INPUT_COST_PER_MILLION")
         output_rate = _optional_float("ARCHIMEDES_OUTPUT_COST_PER_MILLION")
         if (input_rate is None) != (output_rate is None):
-            raise ConfigurationError("input and output model cost rates must be configured together")
+            raise ConfigurationError(
+                "input and output model cost rates must be configured together"
+            )
         if max_cost is not None and input_rate is None:
-            raise ConfigurationError("a model cost limit requires both input and output cost rates")
+            raise ConfigurationError(
+                "a model cost limit requires both input and output cost rates"
+            )
         log_level = os.getenv("ARCHIMEDES_LOG_LEVEL", "INFO").strip().upper()
         if log_level not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
-            raise ConfigurationError("ARCHIMEDES_LOG_LEVEL must be a standard logging level")
+            raise ConfigurationError(
+                "ARCHIMEDES_LOG_LEVEL must be a standard logging level"
+            )
         features = FeatureFlags(
             deterministic_forensics=_bool("ENABLE_DETERMINISTIC_FORENSICS", True),
             claim_confidence=_bool("ENABLE_CLAIM_CONFIDENCE", True),
@@ -205,7 +234,9 @@ class RuntimeConfig:
             input_cost_per_million=input_rate,
             output_cost_per_million=output_rate,
             max_repair_attempts=_int("ARCHIMEDES_MAX_REPAIR_ATTEMPTS", 3, 1),
-            enable_external_knowledge=_bool("ARCHIMEDES_ENABLE_EXTERNAL_KNOWLEDGE", False),
+            enable_external_knowledge=_bool(
+                "ARCHIMEDES_ENABLE_EXTERNAL_KNOWLEDGE", False
+            ),
             log_level=log_level,
             debug=_bool("ARCHIMEDES_DEBUG", False),
             trace_enabled=_bool("ARCHIMEDES_ENABLE_LOCAL_TRACE", True),

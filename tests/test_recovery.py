@@ -6,11 +6,18 @@ import unittest
 from pathlib import Path
 
 from src.build.feedback import BuildFeedbackResult
+from src.build.unavailable import UnavailableBuildFeedbackProvider
 from src.config import FeatureFlags
 from src.errors import BuildFeedbackError
 from src.forensics.log_parser import analyze_build_log
 from src.reasoning.controller import RepairController
-from src.schemas import FailureFrontier, FrontierStage
+from src.schemas import (
+    FailureFrontier,
+    FrontierStage,
+    PatchCandidate,
+    PlannedEdit,
+    RepairFamily,
+)
 from src.workspace.paths import WorkspacePaths
 
 from .support import make_workspace, runtime_config
@@ -43,7 +50,40 @@ class FailingBuildFeedback:
         raise BuildFeedbackError("simulated gateway failure")
 
 
-def feedback(log: str, stage: FrontierStage, signature: str, request_id: str) -> BuildFeedbackResult:
+class LowInformationController(RepairController):
+    def _candidate_for(self, **kwargs):
+        candidate = super()._candidate_for(**kwargs)
+        if candidate is not None:
+            candidate.expected_information_gain_if_built = 0.10
+        return candidate
+
+
+class InvalidCandidateController(RepairController):
+    def _candidate_for(self, **kwargs):
+        del kwargs
+        return PatchCandidate(
+            id="candidate-invalid-parent",
+            repair_family=RepairFamily.SOURCE_PORT,
+            rationale="exercise atomic precondition failure",
+            assumption_claim_ids=[],
+            planned_edits=[
+                PlannedEdit(
+                    operation="create_file",
+                    path="missing/parent/new.c",
+                    replacement="int value;\n",
+                    rationale="synthetic invalid parent",
+                )
+            ],
+            confidence=0.95,
+            risk=0.05,
+            expected_frontier=FrontierStage.COMPILE,
+            expected_information_gain_if_built=0.8,
+        )
+
+
+def feedback(
+    log: str, stage: FrontierStage, signature: str, request_id: str
+) -> BuildFeedbackResult:
     return BuildFeedbackResult(
         success=stage is FrontierStage.SUCCESS,
         raw_log=log,
@@ -54,19 +94,32 @@ def feedback(log: str, stage: FrontierStage, signature: str, request_id: str) ->
 
 class RecoveryTests(unittest.TestCase):
     def _metadata(self) -> str:
-        return json.dumps({
-            "case_id": "iterative",
-            "source_architecture": "x86_64",
-            "target_architecture": "riscv64",
-        })
+        return json.dumps(
+            {
+                "case_id": "iterative",
+                "source_architecture": "x86_64",
+                "target_architecture": "riscv64",
+            }
+        )
 
     def test_progress_is_retained_and_second_repair_reaches_success(self) -> None:
         initial_log = "CMake Error: compiler does not support requested option -mavx2\n"
-        atomic_log = "ld: main.o: undefined reference to `__atomic_compare_exchange_16'\n"
-        provider = SequenceBuildFeedback([
-            feedback(atomic_log, FrontierStage.LINK, "undefined __atomic_compare_exchange_16", "build-1"),
-            feedback("build succeeded\n", FrontierStage.SUCCESS, "success", "build-2"),
-        ])
+        atomic_log = (
+            "ld: main.o: undefined reference to `__atomic_compare_exchange_16'\n"
+        )
+        provider = SequenceBuildFeedback(
+            [
+                feedback(
+                    atomic_log,
+                    FrontierStage.LINK,
+                    "undefined __atomic_compare_exchange_16",
+                    "build-1",
+                ),
+                feedback(
+                    "build succeeded\n", FrontierStage.SUCCESS, "success", "build-2"
+                ),
+            ]
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
@@ -98,11 +151,64 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(outcome.episode.attempts[0].decision.value, "keep")
             self.assertEqual(outcome.episode.attempts[1].decision.value, "success")
 
+    def test_cmake_feature_repair_fails_closed_when_repository_match_is_ambiguous(
+        self,
+    ) -> None:
+        initial_log = "CMake Error: compiler does not support requested option -mavx2\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
+            for directory in (repo / "first", repo / "second"):
+                directory.mkdir()
+                (directory / "CMakeLists.txt").write_text(
+                    'set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx2")\n',
+                    encoding="utf-8",
+                )
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(outcome.result.modified_paths, [])
+
+    def test_atomic_link_repair_fails_closed_when_link_recipe_is_ambiguous(
+        self,
+    ) -> None:
+        atomic_log = (
+            "ld: main.o: undefined reference to `__atomic_compare_exchange_16'\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(root, metadata=self._metadata(), log=atomic_log)
+            (repo / "main.c").write_text(
+                "int f(void) { return __atomic_compare_exchange_n(0, 0, 0, 0, 0, 0); }\n",
+                encoding="utf-8",
+            )
+            for directory in (repo / "first", repo / "second"):
+                directory.mkdir()
+                (directory / "Makefile").write_text(
+                    "all: main.c\n\t$(CC) -o demo main.c\n", encoding="utf-8"
+                )
+
+            outcome = RepairController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(outcome.result.modified_paths, [])
+
     def test_explicit_success_overrides_an_uninformative_frontier(self) -> None:
         initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
         initial_frontier = analyze_build_log(initial_log).frontier
         provider = SequenceBuildFeedback(
-            [BuildFeedbackResult(True, "build succeeded\n", initial_frontier, "build-1")]
+            [
+                BuildFeedbackResult(
+                    True, "build succeeded\n", initial_frontier, "build-1"
+                )
+            ]
         )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -137,11 +243,62 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(outcome.episode.attempts[0].build_result, "unavailable")
         self.assertIn("failed safely", outcome.result.message)
 
+    def test_low_information_build_is_skipped_without_misreporting_rollback(
+        self,
+    ) -> None:
+        initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
+            makefile = repo / "Makefile"
+            makefile.write_text("CFLAGS += -msse4.2\n", encoding="utf-8")
+
+            outcome = LowInformationController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=FailingBuildFeedback(),
+            ).run()
+
+            self.assertEqual(outcome.result.modified_paths, ["Makefile"])
+            self.assertEqual(outcome.metrics.build_requests, 0)
+            self.assertIn("expected information value", outcome.result.message)
+            self.assertNotIn("rolled back", outcome.result.message)
+
+    def test_atomic_candidate_failure_finishes_without_partial_edit_or_agent_error(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo, _ = make_workspace(
+                root,
+                metadata=self._metadata(),
+                log="src/value.c:1: error: invalid value\n",
+            )
+
+            outcome = InvalidCandidateController(
+                config=runtime_config(root),
+                workspace=WorkspacePaths.resolve(root),
+                build_feedback=UnavailableBuildFeedbackProvider(),
+            ).run()
+
+            self.assertEqual(outcome.result.status, "completed")
+            self.assertEqual(outcome.result.modified_paths, [])
+            self.assertEqual(outcome.metrics.invalid_patch_count, 1)
+            self.assertFalse((repo / "missing").exists())
+            self.assertIn("atomic edit precondition", outcome.result.message)
+
     def test_regression_rolls_back_the_current_attempt(self) -> None:
         initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
-        provider = SequenceBuildFeedback([
-            feedback("configure: error: compiler unavailable\n", FrontierStage.CONFIGURE, "compiler unavailable", "build-1")
-        ])
+        provider = SequenceBuildFeedback(
+            [
+                feedback(
+                    "configure: error: compiler unavailable\n",
+                    FrontierStage.CONFIGURE,
+                    "compiler unavailable",
+                    "build-1",
+                )
+            ]
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
@@ -163,9 +320,16 @@ class RecoveryTests(unittest.TestCase):
     def test_same_frontier_new_signature_preserves_partial_progress(self) -> None:
         initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
         next_log = "src/other.c:1: error: unrelated portable declaration missing\n"
-        provider = SequenceBuildFeedback([
-            feedback(next_log, FrontierStage.COMPILE, "other declaration missing", "build-1")
-        ])
+        provider = SequenceBuildFeedback(
+            [
+                feedback(
+                    next_log,
+                    FrontierStage.COMPILE,
+                    "other declaration missing",
+                    "build-1",
+                )
+            ]
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
@@ -176,7 +340,9 @@ class RecoveryTests(unittest.TestCase):
                 workspace=WorkspacePaths.resolve(root),
                 build_feedback=provider,
             ).run()
-            self.assertIn("ARCHIMEDES_TARGET_TRIPLE", makefile.read_text(encoding="utf-8"))
+            self.assertIn(
+                "ARCHIMEDES_TARGET_TRIPLE", makefile.read_text(encoding="utf-8")
+            )
             self.assertEqual(outcome.result.modified_paths, ["Makefile"])
             self.assertEqual(outcome.metrics.rollback_count, 0)
             self.assertEqual(
@@ -186,9 +352,9 @@ class RecoveryTests(unittest.TestCase):
     def test_identical_failure_is_ineffective_and_rolls_back(self) -> None:
         initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
         initial_frontier = analyze_build_log(initial_log).frontier
-        provider = SequenceBuildFeedback([
-            BuildFeedbackResult(False, initial_log, initial_frontier, "build-1")
-        ])
+        provider = SequenceBuildFeedback(
+            [BuildFeedbackResult(False, initial_log, initial_frontier, "build-1")]
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)
@@ -199,20 +365,24 @@ class RecoveryTests(unittest.TestCase):
                 workspace=WorkspacePaths.resolve(root),
                 build_feedback=provider,
             ).run()
-            self.assertEqual(makefile.read_text(encoding="utf-8"), "CFLAGS += -msse4.2\n")
+            self.assertEqual(
+                makefile.read_text(encoding="utf-8"), "CFLAGS += -msse4.2\n"
+            )
             self.assertEqual(outcome.episode.attempts[0].build_result, "ineffective")
             self.assertEqual(outcome.metrics.rollback_count, 1)
 
     def test_frontier_ablation_does_not_claim_stage_regression(self) -> None:
         initial_log = "cc: error: unrecognized command-line option '-msse4.2'\n"
-        provider = SequenceBuildFeedback([
-            feedback(
-                "configure: error: compiler unavailable\n",
-                FrontierStage.CONFIGURE,
-                "compiler unavailable",
-                "build-1",
-            )
-        ])
+        provider = SequenceBuildFeedback(
+            [
+                feedback(
+                    "configure: error: compiler unavailable\n",
+                    FrontierStage.CONFIGURE,
+                    "compiler unavailable",
+                    "build-1",
+                )
+            ]
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, _ = make_workspace(root, metadata=self._metadata(), log=initial_log)

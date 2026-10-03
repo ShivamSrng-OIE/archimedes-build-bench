@@ -61,18 +61,17 @@ def _unsigned_digest_identifier(
 
     generator_expected = (
         "    digest_char = [e if e < 128 else e-256 for e in digest_uchar]\n"
-        "    digest_elts = \", \".join(map(str, digest_char))\n"
-        "    print(f\"static const char {args.varname}[] = "
+        '    digest_elts = ", ".join(map(str, digest_char))\n'
+        '    print(f"static const char {args.varname}[] = '
         "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))"
     )
     generator_replacement = (
-        "    digest_elts = \", \".join(map(str, digest_uchar))\n"
-        "    print(f\"static const unsigned char {args.varname}[] = "
+        '    digest_elts = ", ".join(map(str, digest_uchar))\n'
+        '    print(f"static const unsigned char {args.varname}[] = '
         "{{{digest_elts}, 0}};\", file=open(args.output, 'w'))"
     )
     normalized = [
-        (path, text.replace("\r\n", "\n").replace("\r", "\n"))
-        for path, text in files
+        (path, text.replace("\r\n", "\n").replace("\r", "\n")) for path, text in files
     ]
     generators = [
         path for path, text in normalized if text.count(generator_expected) == 1
@@ -85,7 +84,12 @@ def _unsigned_digest_identifier(
     for path, text in normalized:
         for match in function_pattern.finditer(text):
             functions.append(
-                (path, match.group("expected"), match.group("name"), match.group("array"))
+                (
+                    path,
+                    match.group("expected"),
+                    match.group("name"),
+                    match.group("array"),
+                )
             )
     if len(generators) != 1 or len(functions) != 1:
         return ()
@@ -170,7 +174,9 @@ def _debian_multiarch_path(
         for line in text.splitlines():
             if source_triplet in line:
                 rules_matches.append((path, line))
-    if len(rules_matches) == 1 and (missing_path is not None or missing_cmake_package is not None):
+    if len(rules_matches) == 1 and (
+        missing_path is not None or missing_cmake_package is not None
+    ):
         path, expected = rules_matches[0]
         replacement = expected.replace(
             source_triplet, "$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)"
@@ -264,9 +270,7 @@ def _unconditional_build_abort(
         f"{indent}# Removed an unconditional build abort whose emitted diagnostic "
         "matched the observed failure log."
     )
-    rationale = (
-        "remove the uniquely observed unconditional build abort that emitted the causal diagnostic"
-    )
+    rationale = "remove the uniquely observed unconditional build abort that emitted the causal diagnostic"
     return DeterministicMatch(
         RepairFamily.PACKAGING_RULE,
         rationale,
@@ -276,33 +280,37 @@ def _unconditional_build_abort(
     )
 
 
-def _cmake_feature_check(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+def _cmake_feature_check(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
     flag_match = re.search(r"-(?:mavx\d*|msse\d*(?:\.\d)?)", log, re.I)
     if flag_match is None or "does not support" not in log.lower():
         return None
     flag = flag_match.group(0)
+    matches: list[tuple[str, str]] = []
     for path, text in files:
         if not path.lower().endswith(("cmakelists.txt", ".cmake")):
             continue
-        lines = [line for line in text.splitlines() if flag in line]
-        if len(lines) != 1:
-            continue
-        expected = lines[0]
-        variable = "ARCHIMEDES_COMPILER_SUPPORTS_" + re.sub(r"[^A-Za-z0-9]", "_", flag).upper()
-        replacement = (
-            "include(CheckCCompilerFlag)\n"
-            f'check_c_compiler_flag("{flag}" {variable})\n'
-            f"if({variable})\n  {expected.strip()}\nendif()"
-        )
-        rationale = f"enable {flag} only after the target compiler accepts it"
-        return DeterministicMatch(
-            RepairFamily.TOOLCHAIN_FEATURE_DETECTION,
-            rationale,
-            (_edit(path, expected, replacement, rationale),),
-            confidence=0.94,
-            risk=0.05,
-        )
-    return None
+        matches.extend((path, line) for line in text.splitlines() if flag in line)
+    if len(matches) != 1:
+        return None
+    path, expected = matches[0]
+    variable = (
+        "ARCHIMEDES_COMPILER_SUPPORTS_" + re.sub(r"[^A-Za-z0-9]", "_", flag).upper()
+    )
+    replacement = (
+        "include(CheckCCompilerFlag)\n"
+        f'check_c_compiler_flag("{flag}" {variable})\n'
+        f"if({variable})\n  {expected.strip()}\nendif()"
+    )
+    rationale = f"enable {flag} only after the target compiler accepts it"
+    return DeterministicMatch(
+        RepairFamily.TOOLCHAIN_FEATURE_DETECTION,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.94,
+        risk=0.05,
+    )
 
 
 def _autoconf_rejected_x86_flags(
@@ -335,8 +343,7 @@ def _autoconf_rejected_x86_flags(
             continue
         for line in text.splitlines():
             if all(
-                re.search(rf"(?<!\S){re.escape(flag)}(?!\S)", line)
-                for flag in rejected
+                re.search(rf"(?<!\S){re.escape(flag)}(?!\S)", line) for flag in rejected
             ):
                 matches.append((path, line))
     if len(matches) != 1:
@@ -346,9 +353,7 @@ def _autoconf_rejected_x86_flags(
     indentation = expected[: len(expected) - len(expected.lstrip(" \t"))]
     replacement = expected
     for flag in sorted(rejected, key=len, reverse=True):
-        replacement = re.sub(
-            rf"(?<!\S){re.escape(flag)}(?!\S)", "", replacement
-        )
+        replacement = re.sub(rf"(?<!\S){re.escape(flag)}(?!\S)", "", replacement)
     replacement = indentation + replacement.lstrip(" \t")
     replacement = re.sub(r"(?<=\S)[ \t]{2,}", " ", replacement)
     if replacement == expected:
@@ -367,90 +372,130 @@ def _autoconf_rejected_x86_flags(
     )
 
 
-def _cmake_portable_source(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
-    if not re.search(r"(?:x86intrin|immintrin)\.h.*(?:no such file|not found)", log, re.I | re.S):
+def _cmake_portable_source(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
+    if not re.search(
+        r"(?:x86intrin|immintrin)\.h.*(?:no such file|not found)", log, re.I | re.S
+    ):
         return None
     file_map = dict(files)
+    matches: list[tuple[str, str, str, str]] = []
     for path, text in files:
         if not path.lower().endswith("cmakelists.txt"):
             continue
-        for match in re.finditer(r"^add_library\((\S+)\s+([^\s()]*optimized[^\s()]*)\)\s*$", text, re.M):
+        for match in re.finditer(
+            r"^add_library\((\S+)\s+([^\s()]*optimized[^\s()]*)\)\s*$", text, re.M
+        ):
             library, optimized = match.groups()
             parent = Path(path).parent.as_posix()
             generic = optimized.replace("optimized", "generic")
             generic_path = generic if parent == "." else f"{parent}/{generic}"
             if generic_path not in file_map:
                 continue
-            expected = match.group(0)
-            replacement = (
-                'if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")\n'
-                f"  add_library({library} {optimized})\n"
-                "else()\n"
-                f"  add_library({library} {generic})\n"
-                "endif()"
-            )
-            rationale = "select the observed generic source when x86 intrinsic headers are unavailable"
-            return DeterministicMatch(
-                RepairFamily.PORTABLE_FALLBACK,
-                rationale,
-                (_edit(path, expected, replacement, rationale),),
-                confidence=0.95,
-                risk=0.05,
-            )
-    return None
+            matches.append((path, match.group(0), library, optimized))
+    if len(matches) != 1:
+        return None
+    path, expected, library, optimized = matches[0]
+    generic = optimized.replace("optimized", "generic")
+    replacement = (
+        'if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")\n'
+        f"  add_library({library} {optimized})\n"
+        "else()\n"
+        f"  add_library({library} {generic})\n"
+        "endif()"
+    )
+    rationale = (
+        "select the observed generic source when x86 intrinsic headers are unavailable"
+    )
+    return DeterministicMatch(
+        RepairFamily.PORTABLE_FALLBACK,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.95,
+        risk=0.05,
+    )
 
 
-def _atomic_linkage(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
-    if "undefined reference to `__atomic" not in log and "undefined reference to '__atomic" not in log:
+def _atomic_linkage(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
+    if (
+        "undefined reference to `__atomic" not in log
+        and "undefined reference to '__atomic" not in log
+    ):
         return None
     if not any("__atomic" in text for _, text in files):
         return None
+    matches: list[tuple[str, str]] = []
     for path, text in files:
         if Path(path).name.lower() != "makefile" or "-latomic" in text:
             continue
-        recipes = [line for line in text.splitlines() if line.startswith("\t") and "$(CC)" in line]
-        if len(recipes) != 1:
-            continue
-        expected = recipes[0]
-        replacement = expected + " -latomic"
-        rationale = "link the compiler atomic runtime required by the unresolved builtin symbol"
-        return DeterministicMatch(
-            RepairFamily.ATOMIC_LINKAGE,
-            rationale,
-            (_edit(path, expected, replacement, rationale),),
-            confidence=0.91,
-            risk=0.07,
-        )
-    return None
+        recipes = [
+            line
+            for line in text.splitlines()
+            if line.startswith("\t") and "$(CC)" in line
+        ]
+        matches.extend((path, recipe) for recipe in recipes)
+    if len(matches) != 1:
+        return None
+    path, expected = matches[0]
+    replacement = expected + " -latomic"
+    rationale = (
+        "link the compiler atomic runtime required by the unresolved builtin symbol"
+    )
+    return DeterministicMatch(
+        RepairFamily.ATOMIC_LINKAGE,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.91,
+        risk=0.07,
+    )
 
 
 def _rpm_condition(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+    installed_matches: list[tuple[str, str, str]] = []
+    dependency_matches: list[tuple[str, str, str, str]] = []
     for path, text in files:
         if not path.endswith(".spec"):
             continue
         if "installed (but unpackaged)" in log.lower():
-            match = re.search(r"%ifarch\s+x86_64\s*\n(%files\s*\n[^%]+?)%endif", text, re.I)
+            match = re.search(
+                r"%ifarch\s+x86_64\s*\n(%files\s*\n[^%]+?)%endif", text, re.I
+            )
             if match and text.count(match.group(0)) == 1:
-                rationale = "make the observed installed artifact file list apply on the target architecture"
-                return DeterministicMatch(
-                    RepairFamily.PACKAGING_RULE,
-                    rationale,
-                    (_edit(path, match.group(0), match.group(1).rstrip(), rationale),),
-                    confidence=0.94,
-                    risk=0.05,
+                installed_matches.append(
+                    (path, match.group(0), match.group(1).rstrip())
                 )
         missing = re.search(r"fatal error:\s*([^:\s]+\.h):\s*no such file", log, re.I)
-        block = re.search(r"%ifarch\s+x86_64\s*\n(BuildRequires:\s*[^\n]+)\s*\n%endif", text, re.I)
+        block = re.search(
+            r"%ifarch\s+x86_64\s*\n(BuildRequires:\s*[^\n]+)\s*\n%endif", text, re.I
+        )
         if missing and block and text.count(block.group(0)) == 1:
-            rationale = f"apply the dependency declaration that provides {missing.group(1)} on the target"
-            return DeterministicMatch(
-                RepairFamily.ARCHITECTURE_DEPENDENCY_CONDITION,
-                rationale,
-                (_edit(path, block.group(0), block.group(1), rationale),),
-                confidence=0.90,
-                risk=0.09,
+            dependency_matches.append(
+                (path, block.group(0), block.group(1), missing.group(1))
             )
-    return None
+    if len(installed_matches) == 1:
+        path, expected, replacement = installed_matches[0]
+        rationale = "make the observed installed artifact file list apply on the target architecture"
+        return DeterministicMatch(
+            RepairFamily.PACKAGING_RULE,
+            rationale,
+            (_edit(path, expected, replacement, rationale),),
+            confidence=0.94,
+            risk=0.05,
+        )
+    if len(installed_matches) > 1 or len(dependency_matches) != 1:
+        return None
+    path, expected, replacement, header = dependency_matches[0]
+    rationale = f"apply the dependency declaration that provides {header} on the target"
+    return DeterministicMatch(
+        RepairFamily.ARCHITECTURE_DEPENDENCY_CONDITION,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.90,
+        risk=0.09,
+    )
 
 
 def _artifact_path(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
@@ -458,44 +503,59 @@ def _artifact_path(files: list[tuple[str, str]], log: str) -> DeterministicMatch
     if expected_path is None:
         return None
     required = expected_path.group(1)
+    matches: list[tuple[str, str]] = []
     for path, text in files:
         if Path(path).name.lower() != "makefile":
             continue
         candidates = [line for line in text.splitlines() if "/usr/lib64/" in line]
-        if len(candidates) == 1 and required == "/usr/lib/" + required.rsplit("/", 1)[-1]:
-            expected = candidates[0]
-            replacement = expected.replace("/usr/lib64/", "/usr/lib/")
-            rationale = "install the artifact at the validator-observed architecture-neutral path"
-            return DeterministicMatch(
-                RepairFamily.ARTIFACT_PATH,
-                rationale,
-                (_edit(path, expected, replacement, rationale),),
-                confidence=0.96,
-                risk=0.03,
-            )
-    return None
+        if required == "/usr/lib/" + required.rsplit("/", 1)[-1]:
+            matches.extend((path, line) for line in candidates)
+    if len(matches) != 1:
+        return None
+    path, expected = matches[0]
+    replacement = expected.replace("/usr/lib64/", "/usr/lib/")
+    rationale = (
+        "install the artifact at the validator-observed architecture-neutral path"
+    )
+    return DeterministicMatch(
+        RepairFamily.ARTIFACT_PATH,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.96,
+        risk=0.03,
+    )
 
 
-def _generated_config(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+def _generated_config(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
     if "generated architecture mismatch" not in log.lower():
         return None
+    matches: list[tuple[str, str]] = []
     for path, text in files:
-        matches = re.findall(r"^#define\s+GENERATED_FOR_X86_64\s+1\s*$", text, re.M)
-        if len(matches) == 1:
-            expected = matches[0]
-            replacement = "#if defined(__x86_64__)\n#define GENERATED_FOR_X86_64 1\n#endif"
-            rationale = "expose the generated x86 marker only when compiling for x86_64"
-            return DeterministicMatch(
-                RepairFamily.CONFIG_GENERATION,
-                rationale,
-                (_edit(path, expected, replacement, rationale),),
-                confidence=0.92,
-                risk=0.06,
+        matches.extend(
+            (path, match)
+            for match in re.findall(
+                r"^#define\s+GENERATED_FOR_X86_64\s+1\s*$", text, re.M
             )
-    return None
+        )
+    if len(matches) != 1:
+        return None
+    path, expected = matches[0]
+    replacement = "#if defined(__x86_64__)\n#define GENERATED_FOR_X86_64 1\n#endif"
+    rationale = "expose the generated x86 marker only when compiling for x86_64"
+    return DeterministicMatch(
+        RepairFamily.CONFIG_GENERATION,
+        rationale,
+        (_edit(path, expected, replacement, rationale),),
+        confidence=0.92,
+        risk=0.06,
+    )
 
 
-def _architecture_guard(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+def _architecture_guard(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
     if "unsupported architecture selection" not in log.lower():
         return None
     pattern = re.compile(
@@ -503,30 +563,33 @@ def _architecture_guard(files: list[tuple[str, str]], log: str) -> Deterministic
         r"int\s+(\w+)\(void\)\s*\{\s*return\s+64;\s*\}\s*\n"
         r"#else\s*\n#error\s+unsupported architecture selection\s*\n#endif"
     )
+    matches: list[tuple[str, re.Match[str]]] = []
     for path, text in files:
-        match = pattern.search(text)
-        if match is None or text.count(match.group(0)) != 1:
-            continue
-        function = match.group(1)
-        replacement = (
-            "#if defined(__x86_64__)\n"
-            f"int {function}(void) {{ return 64; }}\n"
-            "#else\n"
-            f"int {function}(void) {{ return (int)(sizeof(void *) * 8); }}\n"
-            "#endif"
-        )
-        rationale = "replace a source-only architecture rejection with the observed pointer-width semantics"
-        return DeterministicMatch(
-            RepairFamily.ARCHITECTURE_GUARD,
-            rationale,
-            (_edit(path, match.group(0), replacement, rationale),),
-            confidence=0.89,
-            risk=0.09,
-        )
-    return None
+        matches.extend((path, match) for match in pattern.finditer(text))
+    if len(matches) != 1:
+        return None
+    path, match = matches[0]
+    function = match.group(1)
+    replacement = (
+        "#if defined(__x86_64__)\n"
+        f"int {function}(void) {{ return 64; }}\n"
+        "#else\n"
+        f"int {function}(void) {{ return (int)(sizeof(void *) * 8); }}\n"
+        "#endif"
+    )
+    rationale = "replace a source-only architecture rejection with the observed pointer-width semantics"
+    return DeterministicMatch(
+        RepairFamily.ARCHITECTURE_GUARD,
+        rationale,
+        (_edit(path, match.group(0), replacement, rationale),),
+        confidence=0.89,
+        risk=0.09,
+    )
 
 
-def _source_fallback(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+def _source_fallback(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
     if not re.search(
         r"(?:immintrin|x86intrin)\.h|intrinsic\s+_mm_|unrecognized opcode\s+[`']pause",
         log,
@@ -542,7 +605,9 @@ def _source_fallback(files: list[tuple[str, str]], log: str) -> DeterministicMat
     if primary is None:
         return None
     source_path = Path(path)
-    fallback_path = str(source_path.with_name(source_path.stem + "_generic.c")).replace("\\", "/")
+    fallback_path = str(source_path.with_name(source_path.stem + "_generic.c")).replace(
+        "\\", "/"
+    )
     fallback = file_map.get(fallback_path)
     if fallback is None:
         return None
@@ -575,74 +640,98 @@ def _source_fallback(files: list[tuple[str, str]], log: str) -> DeterministicMat
     )
 
 
-def _portable_abi_or_bytes(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+def _portable_abi_or_bytes(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
     if "network-order bytes differ" in log.lower():
         pattern = re.compile(
             r"void\s+(\w+)\(unsigned\s+(\w+),\s*unsigned char\s+(\w+)\[4\]\)\s*"
             r"\{\s*\*\(unsigned\s*\*\)\3\s*=\s*\2;\s*\}"
         )
-        for path, text in files:
-            match = pattern.search(text)
-            if not match or text.count(match.group(0)) != 1:
-                continue
-            function, value, output = match.groups()
-            replacement = (
-                f"void {function}(unsigned {value}, unsigned char {output}[4]) {{\n"
-                f"    {output}[0] = (unsigned char)({value} >> 24);\n"
-                f"    {output}[1] = (unsigned char)({value} >> 16);\n"
-                f"    {output}[2] = (unsigned char)({value} >> 8);\n"
-                f"    {output}[3] = (unsigned char){value};\n"
-                "}"
-            )
-            rationale = "serialize bytes explicitly in network order without host-endian aliasing"
-            return DeterministicMatch(
-                RepairFamily.SOURCE_PORT,
-                rationale,
-                (_edit(path, match.group(0), replacement, rationale),),
-                confidence=0.97,
-                risk=0.04,
-            )
+        network_matches = [
+            (path, match) for path, text in files for match in pattern.finditer(text)
+        ]
+        if len(network_matches) != 1:
+            return None
+        path, match = network_matches[0]
+        function, value, output = match.groups()
+        replacement = (
+            f"void {function}(unsigned {value}, unsigned char {output}[4]) {{\n"
+            f"    {output}[0] = (unsigned char)({value} >> 24);\n"
+            f"    {output}[1] = (unsigned char)({value} >> 16);\n"
+            f"    {output}[2] = (unsigned char)({value} >> 8);\n"
+            f"    {output}[3] = (unsigned char){value};\n"
+            "}"
+        )
+        rationale = (
+            "serialize bytes explicitly in network order without host-endian aliasing"
+        )
+        return DeterministicMatch(
+            RepairFamily.SOURCE_PORT,
+            rationale,
+            (_edit(path, match.group(0), replacement, rationale),),
+            confidence=0.97,
+            risk=0.04,
+        )
     if "pointer width must be eight" in log.lower():
+        pointer_matches: list[tuple[str, str]] = []
         for path, text in files:
-            matches = re.findall(
-                r'_Static_assert\(sizeof\(void \*\) == 8, "pointer width must be eight"\);', text
+            pointer_matches.extend(
+                (path, match)
+                for match in re.findall(
+                    r'_Static_assert\(sizeof\(void \*\) == 8, "pointer width must be eight"\);',
+                    text,
+                )
             )
-            if len(matches) == 1:
-                expected = matches[0]
-                replacement = (
-                    "#include <stdint.h>\n"
-                    '_Static_assert(sizeof(uintptr_t) == sizeof(void *), "uintptr_t must represent pointers");'
-                )
-                rationale = "validate the portable pointer-width type instead of requiring a 64-bit ABI"
-                return DeterministicMatch(
-                    RepairFamily.ABI_TYPE_FIX,
-                    rationale,
-                    (_edit(path, expected, replacement, rationale),),
-                    confidence=0.94,
-                    risk=0.05,
-                )
+        if len(pointer_matches) != 1:
+            return None
+        path, expected = pointer_matches[0]
+        replacement = (
+            "#include <stdint.h>\n"
+            '_Static_assert(sizeof(uintptr_t) == sizeof(void *), "uintptr_t must represent pointers");'
+        )
+        rationale = (
+            "validate the portable pointer-width type instead of requiring a 64-bit ABI"
+        )
+        return DeterministicMatch(
+            RepairFamily.ABI_TYPE_FIX,
+            rationale,
+            (_edit(path, expected, replacement, rationale),),
+            confidence=0.94,
+            risk=0.05,
+        )
     return None
 
 
-def _synchronized_dispatch(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+def _synchronized_dispatch(
+    files: list[tuple[str, str]], log: str
+) -> DeterministicMatch | None:
     if "undefined reference to `optimized_" not in log:
         return None
     file_map = dict(files)
-    cmake = next(((path, text) for path, text in files if path.lower().endswith("cmakelists.txt")), None)
-    dispatch = next(((path, text) for path, text in files if Path(path).name == "dispatch.c"), None)
-    if cmake is None or dispatch is None:
-        return None
-    cmake_path, cmake_text = cmake
-    dispatch_path, dispatch_text = dispatch
-    definitions = [line for line in cmake_text.splitlines() if "HAVE_OPTIMIZED_" in line]
-    block = re.search(
+    cmake_matches = [
+        (path, line)
+        for path, text in files
+        if path.lower().endswith("cmakelists.txt")
+        for line in text.splitlines()
+        if "HAVE_OPTIMIZED_" in line
+    ]
+    block_pattern = re.compile(
         r"#ifdef\s+HAVE_OPTIMIZED_CRC\s*\nextern int optimized_crc\(int\);\s*\n"
         r"int crc\(int x\) \{ return optimized_crc\(x\); \}\s*\n#endif",
-        dispatch_text,
     )
-    generic_path = str(Path(dispatch_path).with_name("generic.c")).replace("\\", "/")
-    if len(definitions) != 1 or block is None or "crc_generic" not in file_map.get(generic_path, ""):
+    dispatch_matches = [
+        (path, match)
+        for path, text in files
+        if Path(path).name == "dispatch.c"
+        for match in block_pattern.finditer(text)
+        if "crc_generic"
+        in file_map.get(str(Path(path).with_name("generic.c")).replace("\\", "/"), "")
+    ]
+    if len(cmake_matches) != 1 or len(dispatch_matches) != 1:
         return None
+    cmake_path, definition = cmake_matches[0]
+    dispatch_path, block = dispatch_matches[0]
     fallback = (
         "#ifdef HAVE_OPTIMIZED_CRC\n"
         "extern int optimized_crc(int);\n"
@@ -652,12 +741,19 @@ def _synchronized_dispatch(files: list[tuple[str, str]], log: str) -> Determinis
         "int crc(int x) { return crc_generic(x); }\n"
         "#endif"
     )
-    rationale = "synchronize the feature declaration with an observed generic dispatch path"
+    rationale = (
+        "synchronize the feature declaration with an observed generic dispatch path"
+    )
     return DeterministicMatch(
         RepairFamily.MULTI_FILE_SYNCHRONIZATION,
         rationale,
         (
-            _edit(cmake_path, definitions[0], "# Optimized CRC is enabled only by a proven backend check.", rationale),
+            _edit(
+                cmake_path,
+                definition,
+                "# Optimized CRC is enabled only by a proven backend check.",
+                rationale,
+            ),
             _edit(dispatch_path, block.group(0), fallback, rationale),
         ),
         confidence=0.90,

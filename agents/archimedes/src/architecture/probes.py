@@ -22,9 +22,16 @@ class ProbeResult:
 
 
 _ALLOWED_PROBE_TYPES = {
-    "repository_search", "preprocessor_macro_query", "compiler_feature_test",
-    "compile_only", "link_only", "pkg_config_query", "rpmspec_expansion",
-    "make_dry_run", "file_inspection", "symbol_lookup",
+    "repository_search",
+    "preprocessor_macro_query",
+    "compiler_feature_test",
+    "compile_only",
+    "link_only",
+    "pkg_config_query",
+    "rpmspec_expansion",
+    "make_dry_run",
+    "file_inspection",
+    "symbol_lookup",
 }
 
 
@@ -36,17 +43,24 @@ def execute_probe(
         raise ProbeError(f"probe type is not allowed: {probe.probe_type}")
     if not probe.command:
         raise ProbeError("probe command is empty")
+    if probe.timeout_seconds <= 0:
+        raise ProbeError("probe timeout must be positive")
     executable = Path(probe.command[0]).name
     if not capabilities.has(executable):
         raise ProbeError(f"probe executable is unavailable: {executable}")
     executable_path = capabilities.path(executable)
     if executable_path is None:
         raise ProbeError(f"probe executable is unavailable: {executable}")
-    cwd = (repo_root / probe.working_directory).resolve(strict=True)
     try:
-        cwd.relative_to(repo_root.resolve(strict=True))
-    except ValueError as exc:
-        raise ProbeError("probe working directory escapes repository") from exc
+        root = repo_root.resolve(strict=True)
+        cwd = (root / probe.working_directory).resolve(strict=True)
+        cwd.relative_to(root)
+        if not cwd.is_dir():
+            raise ProbeError("probe working directory is not a directory")
+    except (OSError, ValueError) as exc:
+        raise ProbeError(
+            "probe working directory is unavailable or escapes repository"
+        ) from exc
     try:
         completed = subprocess.run(
             [executable_path, *probe.command[1:]],

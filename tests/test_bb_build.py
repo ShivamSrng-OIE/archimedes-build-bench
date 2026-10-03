@@ -53,7 +53,10 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
             {"command": "bb-build", "attempt_limit": 101},
         )
         for feedback in invalid:
-            with self.subTest(feedback=feedback), tempfile.TemporaryDirectory() as temporary:
+            with (
+                self.subTest(feedback=feedback),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
                 input_dir, repo = self._workspace(Path(temporary), feedback)
                 provider = BbBuildFeedbackProvider.discover(
                     executable="bb-build", input_dir=input_dir, repo_root=repo
@@ -73,6 +76,7 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
                 b"[]",
                 b'{"schema_version":"0.2","build_feedback":{"command":"bb-build","attempt_limit":1}}',
                 b'{"schema_version":"0.1","build_feedback":{"command":"bb-build","attempt_limit":NaN}}',
+                (b'{"nested":' + b"[" * 2_000 + b"0" + b"]" * 2_000 + b"}"),
             )
             for payload in malformed_payloads:
                 with self.subTest(payload=payload):
@@ -99,15 +103,15 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
                 input_dir, repo = self._workspace(
                     Path(temporary), {"command": "bb-build", "attempt_limit": 1}
                 )
-                with patch.dict(
-                    os.environ, {"BB_BUILD_GATEWAY_TIMEOUT_SECONDS": raw}
-                ):
+                with patch.dict(os.environ, {"BB_BUILD_GATEWAY_TIMEOUT_SECONDS": raw}):
                     provider = BbBuildFeedbackProvider.discover(
                         executable="bb-build", input_dir=input_dir, repo_root=repo
                     )
                 self.assertEqual(provider.timeout_seconds, expected)
 
-    @unittest.skipIf(os.name == "nt", "symbolic-link creation may require Windows elevation")
+    @unittest.skipIf(
+        os.name == "nt", "symbolic-link creation may require Windows elevation"
+    )
     def test_discovery_rejects_symlinked_task_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -179,17 +183,20 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
             )
             failures = (OSError("missing"), subprocess.TimeoutExpired("bb-build", 1))
             for failure in failures:
-                with self.subTest(failure=type(failure).__name__), patch(
-                    "src.build.bb_build.subprocess.run", side_effect=failure
-                ), self.assertRaises(BuildFeedbackError):
+                with (
+                    self.subTest(failure=type(failure).__name__),
+                    patch("src.build.bb_build.subprocess.run", side_effect=failure),
+                    self.assertRaises(BuildFeedbackError),
+                ):
                     available.request(expected_information_value=0.8)
 
             oversized = subprocess.CompletedProcess(
                 ["bb-build"], 0, b"{" + b" " * (64 * 1024), b""
             )
-            with patch(
-                "src.build.bb_build.subprocess.run", return_value=oversized
-            ), self.assertRaises(BuildFeedbackError):
+            with (
+                patch("src.build.bb_build.subprocess.run", return_value=oversized),
+                self.assertRaises(BuildFeedbackError),
+            ):
                 available.request(expected_information_value=0.8)
 
     def test_invalid_or_rejected_response_fails_closed(self) -> None:
@@ -239,7 +246,10 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
             ),
         )
         for completed in responses:
-            with self.subTest(stdout=completed.stdout), tempfile.TemporaryDirectory() as temporary:
+            with (
+                self.subTest(stdout=completed.stdout),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
                 input_dir, repo = self._workspace(
                     Path(temporary),
                     {"command": "bb-build", "attempt_limit": 1},
@@ -247,9 +257,10 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
                 provider = BbBuildFeedbackProvider.discover(
                     executable="bb-build", input_dir=input_dir, repo_root=repo
                 )
-                with patch(
-                    "src.build.bb_build.subprocess.run", return_value=completed
-                ), self.assertRaises(BuildFeedbackError):
+                with (
+                    patch("src.build.bb_build.subprocess.run", return_value=completed),
+                    self.assertRaises(BuildFeedbackError),
+                ):
                     provider.request(expected_information_value=0.8)
 
 

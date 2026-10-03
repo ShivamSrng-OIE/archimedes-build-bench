@@ -91,6 +91,23 @@ preserving the evidence-supported edit. Explicit build success takes precedence
 over an uninformative parsed frontier, preventing a successful repair from
 being rolled back.
 
+Version 0.2.14 hardens the final worktree and model boundaries against
+ambiguous or hostile inputs. Official `buildbench.case.v0.1` wrappers default
+to the evaluator's documented `input/` patch prefix; explicit published
+`allowed_paths` still take precedence. Path components are bounded, every
+symlink edit is rejected, and filesystem inspection failures become controlled
+policy outcomes. Deterministic repair families now require repository-wide
+uniqueness instead of accepting the first matching file, and hazard scans stop
+at their declared result cap even when one file contains many matches.
+Untrusted JSON receives a deterministic structural-depth limit before parsing,
+provider redirects are disabled so bearer credentials cannot cross endpoint
+boundaries, response arrays and content are bounded, and malformed runtime
+configuration still produces a best-effort protocol diagnostic. Model plans
+rejected by causal, portability, or competition-policy review receive at most
+one evidence-bearing replan. Invalid patch transactions, provider outages, and
+low-information build requests terminate cleanly without partial edits or
+misleading success/rollback claims.
+
 ## System architecture
 
 The runtime is separated into small typed packages:

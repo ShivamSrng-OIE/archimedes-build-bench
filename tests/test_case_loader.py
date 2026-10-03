@@ -77,7 +77,9 @@ class CaseLoaderTests(unittest.TestCase):
 
             self.assertEqual(case.build_log, "")
 
-    def test_oversized_log_preserves_terminal_failure_without_loading_middle(self) -> None:
+    def test_oversized_log_preserves_terminal_failure_without_loading_middle(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -114,6 +116,15 @@ class CaseLoaderTests(unittest.TestCase):
             (paths.input / "case.json").write_text(
                 '{"schema_version":"0.1","weight":NaN}', encoding="utf-8"
             )
+            with self.assertRaises(CaseFormatError):
+                load_case(paths)
+
+    def test_excessively_nested_metadata_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            paths = self._workspace(root)
+            nested = '{"value":' + "[" * 2_000 + "0" + "]" * 2_000 + "}"
+            (paths.input / "case.json").write_text(nested, encoding="utf-8")
             with self.assertRaises(CaseFormatError):
                 load_case(paths)
 

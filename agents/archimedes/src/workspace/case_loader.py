@@ -8,6 +8,7 @@ from pathlib import Path
 from ..architecture.aliases import normalize_architecture
 from ..constants import MAX_LOG_CHARACTERS
 from ..errors import CaseFormatError
+from ..json_safety import reject_excessive_json_nesting
 from ..schemas import CaseData, JSONValue
 from .paths import WorkspacePaths
 
@@ -77,14 +78,26 @@ def _load_metadata(input_dir: Path) -> dict[str, JSONValue]:
         except FileNotFoundError:
             continue
         except (OSError, ValueError) as exc:
-            raise CaseFormatError(f"cannot inspect case metadata {path.name}: {exc}") from exc
+            raise CaseFormatError(
+                f"cannot inspect case metadata {path.name}: {exc}"
+            ) from exc
         try:
+            text = resolved.read_text(encoding="utf-8")
+            reject_excessive_json_nesting(text)
             value = json.loads(
-                resolved.read_text(encoding="utf-8"),
+                text,
                 parse_constant=_reject_nonfinite_constant,
             )
-        except (UnicodeDecodeError, json.JSONDecodeError, OSError, ValueError) as exc:
-            raise CaseFormatError(f"cannot read case metadata {path.name}: {exc}") from exc
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            OSError,
+            ValueError,
+            RecursionError,
+        ) as exc:
+            raise CaseFormatError(
+                f"cannot read case metadata {path.name}: {exc}"
+            ) from exc
         if not isinstance(value, dict):
             raise CaseFormatError(f"case metadata {path.name} must contain an object")
         return value
@@ -123,7 +136,9 @@ def _nested_string(
     return None
 
 
-def _released_case_identity(repo_dir: Path) -> tuple[str | None, str | None, str | None]:
+def _released_case_identity(
+    repo_dir: Path,
+) -> tuple[str | None, str | None, str | None]:
     """Read only the documented identity fields from a released worktree case file."""
     candidate = repo_dir / "case.json"
     try:
@@ -133,13 +148,21 @@ def _released_case_identity(repo_dir: Path) -> tuple[str | None, str | None, str
         resolved.relative_to(repo_dir.resolve(strict=True))
         if not resolved.is_file() or resolved.stat().st_size > _MAX_METADATA_BYTES:
             return None, None, None
-        value = json.loads(
-            resolved.read_text(encoding="utf-8"),
-            parse_constant=_reject_nonfinite_constant,
-        )
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        text = resolved.read_text(encoding="utf-8")
+        reject_excessive_json_nesting(text)
+        value = json.loads(text, parse_constant=_reject_nonfinite_constant)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+        RecursionError,
+    ):
         return None, None, None
-    if not isinstance(value, dict) or value.get("schema_version") != _RELEASED_CASE_SCHEMA:
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != _RELEASED_CASE_SCHEMA
+    ):
         return None, None, None
     task = value.get("task")
     platform = value.get("platform")

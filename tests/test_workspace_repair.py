@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,8 +28,15 @@ from src.workspace.paths import WorkspacePaths
 
 def candidate(edit: PlannedEdit) -> PatchCandidate:
     return PatchCandidate(
-        "candidate-001", RepairFamily.CONDITIONAL_COMPILER_FLAG, "guard a causal flag", [], [edit],
-        0.95, 0.05, FrontierStage.COMPILE, 0.8,
+        "candidate-001",
+        RepairFamily.CONDITIONAL_COMPILER_FLAG,
+        "guard a causal flag",
+        [],
+        [edit],
+        0.95,
+        0.05,
+        FrontierStage.COMPILE,
+        0.8,
     )
 
 
@@ -58,9 +67,17 @@ class WorkspaceRepairTests(unittest.TestCase):
             repo = Path(name)
             (repo / "file.txt").write_text("x", encoding="utf-8")
             policy = PathPolicy(repo)
-            for unsafe in ("../input/case.json", "/workspace/input/case.json", ".git/config", "hidden-evaluator/data"):
+            for unsafe in (
+                "../input/case.json",
+                "/workspace/input/case.json",
+                ".git/config",
+                "hidden-evaluator/data",
+            ):
                 with self.subTest(path=unsafe), self.assertRaises(PathPolicyError):
                     policy.validate_relative(unsafe)
+            for unsafe in ("line\nbreak.c", "nul\0byte.c", "a" * 256):
+                with self.subTest(path=unsafe), self.assertRaises(PathPolicyError):
+                    policy.validate_relative(unsafe, creating=True)
             with self.assertRaises(PathPolicyError):
                 policy.validate_relative(".env.local", creating=True)
 
@@ -72,11 +89,59 @@ class WorkspaceRepairTests(unittest.TestCase):
             (repo / "src" / "main.c").write_text("int x;\n", encoding="utf-8")
             (repo / "docs" / "notes.txt").write_text("notes\n", encoding="utf-8")
             policy = PathPolicy.from_metadata(repo, {"allowed_paths": ["src/**"]})
-            self.assertEqual(policy.validate_relative("src/main.c"), repo / "src" / "main.c")
+            self.assertEqual(
+                policy.validate_relative("src/main.c"), repo / "src" / "main.c"
+            )
             with self.assertRaises(PathPolicyError):
                 policy.validate_relative("docs/notes.txt")
             with self.assertRaises(PathPolicyError):
                 PathPolicy.from_metadata(repo, {"allowed_paths": ["../outside"]})
+
+    def test_official_case_wrapper_defaults_to_input_only(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            package = repo / "input"
+            package.mkdir()
+            (package / "Makefile").write_text("all:\n\ttrue\n", encoding="utf-8")
+            (repo / "case.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "buildbench.case.v0.1",
+                        "task": {"type": "cross_arch_package_build_repair"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            policy = PathPolicy.from_metadata(repo, {})
+
+            self.assertEqual(
+                policy.validate_relative("input/Makefile"), package / "Makefile"
+            )
+            with self.assertRaises(PathPolicyError):
+                policy.validate_relative("case.json")
+
+    def test_nonofficial_repository_keeps_generic_root_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            (repo / "Makefile").write_text("all:\n\ttrue\n", encoding="utf-8")
+
+            policy = PathPolicy.from_metadata(repo, {})
+
+            self.assertEqual(policy.validate_relative("Makefile"), repo / "Makefile")
+
+    @unittest.skipIf(
+        os.name == "nt", "symbolic-link creation may require Windows elevation"
+    )
+    def test_path_policy_rejects_even_internal_symbolic_link_edits(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            repo = Path(name)
+            target = repo / "target.c"
+            target.write_text("int value;\n", encoding="utf-8")
+            (repo / "alias.c").symlink_to(target)
+
+            with self.assertRaises(PathPolicyError):
+                PathPolicy(repo).validate_relative("alias.c")
 
     def test_atomic_edit_hash_guard_and_rollback(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -85,7 +150,9 @@ class WorkspaceRepairTests(unittest.TestCase):
             path.write_text("CFLAGS += -msse4.2\n", encoding="utf-8")
             original = path.read_bytes()
             edit = PlannedEdit(
-                "replace_lines", "Makefile", "CFLAGS += -O2",
+                "replace_lines",
+                "Makefile",
+                "CFLAGS += -O2",
                 expected_text="CFLAGS += -msse4.2",
                 expected_hash=hashlib.sha256(original).hexdigest(),
             )
@@ -133,8 +200,17 @@ class WorkspaceRepairTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
             (repo / "tests").mkdir()
-            (repo / "tests" / "test_ok.py").write_text("assert True\n", encoding="utf-8")
-            bad = candidate(PlannedEdit("replace_lines", "tests/test_ok.py", "", expected_text="assert True\n"))
+            (repo / "tests" / "test_ok.py").write_text(
+                "assert True\n", encoding="utf-8"
+            )
+            bad = candidate(
+                PlannedEdit(
+                    "replace_lines",
+                    "tests/test_ok.py",
+                    "",
+                    expected_text="assert True\n",
+                )
+            )
             self.assertFalse(passes_policy_critic(bad, PathPolicy(repo)))
 
     def test_generic_rulebook_loads(self) -> None:

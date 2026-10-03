@@ -11,6 +11,7 @@ from typing import Any
 
 from ..errors import BuildFeedbackError
 from ..forensics.log_parser import analyze_build_log
+from ..json_safety import reject_excessive_json_nesting
 from .feedback import BuildFeedbackResult
 
 
@@ -29,10 +30,15 @@ def _strict_json_object(
     if len(data) > max_bytes:
         raise BuildFeedbackError(f"{description} exceeds the maximum allowed size")
     try:
-        value = json.loads(
-            data.decode("utf-8"), parse_constant=_reject_nonfinite_constant
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        text = data.decode("utf-8")
+        reject_excessive_json_nesting(text)
+        value = json.loads(text, parse_constant=_reject_nonfinite_constant)
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+        RecursionError,
+    ) as exc:
         raise BuildFeedbackError(f"{description} is not valid UTF-8 JSON") from exc
     if not isinstance(value, dict):
         raise BuildFeedbackError(f"{description} root must be an object")
@@ -81,7 +87,9 @@ class BbBuildFeedbackProvider:
                 raise BuildFeedbackError("task metadata is not a regular file")
             size = resolved_task.stat().st_size
             if size > _MAX_TASK_BYTES:
-                raise BuildFeedbackError("task metadata exceeds the maximum allowed size")
+                raise BuildFeedbackError(
+                    "task metadata exceeds the maximum allowed size"
+                )
             payload = _strict_json_object(
                 resolved_task.read_bytes(),
                 description="task metadata",
@@ -91,10 +99,18 @@ class BbBuildFeedbackProvider:
             if not isinstance(feedback, dict):
                 raise BuildFeedbackError(reason)
             if feedback.get("command") != "bb-build":
-                raise BuildFeedbackError("task metadata declares an unsupported build command")
+                raise BuildFeedbackError(
+                    "task metadata declares an unsupported build command"
+                )
             limit = feedback.get("attempt_limit")
-            if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
-                raise BuildFeedbackError("bb-build attempt_limit must be an integer from 1 to 100")
+            if (
+                isinstance(limit, bool)
+                or not isinstance(limit, int)
+                or not 1 <= limit <= 100
+            ):
+                raise BuildFeedbackError(
+                    "bb-build attempt_limit must be an integer from 1 to 100"
+                )
             if payload.get("schema_version") != "0.1":
                 raise BuildFeedbackError("bb-build requires task schema_version 0.1")
             request_limit = limit
@@ -128,19 +144,27 @@ class BbBuildFeedbackProvider:
             raise BuildFeedbackError(
                 f"bb-build invocation failed: {type(exc).__name__}"
             ) from exc
-        payload = _strict_json_object(
-            completed.stdout, description="bb-build response"
-        )
+        payload = _strict_json_object(completed.stdout, description="bb-build response")
         if completed.returncode not in {0, 1}:
-            raise BuildFeedbackError("bb-build command failed without a protocol response")
-        if payload.get("schema_version") != "0.1" or not isinstance(payload.get("ok"), bool):
+            raise BuildFeedbackError(
+                "bb-build command failed without a protocol response"
+            )
+        if payload.get("schema_version") != "0.1" or not isinstance(
+            payload.get("ok"), bool
+        ):
             raise BuildFeedbackError("bb-build response does not satisfy protocol 0.1")
         if payload["ok"] is not True:
             error = payload.get("error")
-            safe_error = error if isinstance(error, str) and len(error) <= 100 else "request_failed"
+            safe_error = (
+                error
+                if isinstance(error, str) and len(error) <= 100
+                else "request_failed"
+            )
             raise BuildFeedbackError(f"bb-build rejected the request: {safe_error}")
         if completed.returncode != 0:
-            raise BuildFeedbackError("bb-build success response used a failing exit status")
+            raise BuildFeedbackError(
+                "bb-build success response used a failing exit status"
+            )
 
         attempt = payload.get("attempt")
         attempt_limit = payload.get("attempt_limit")

@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from io import BytesIO
+from http.client import HTTPMessage
 from pathlib import Path
 from unittest.mock import patch
+from urllib.request import Request
 
 from src.context.token_budget import UsageBudget
 from src.errors import BudgetExhaustedError, ModelProtocolError
@@ -13,6 +16,7 @@ from src.models.base import ModelTask, ModelTier
 from src.models.json_protocol import parse_model_json
 from src.models.mock import MockModelClient
 from src.models.openai_compatible import OpenAICompatibleModelClient
+from src.models.openai_compatible import _NoRedirectHandler
 from src.models.prompts import system_prompt
 from src.models.router import EscalationSignals, ModelRouter
 from src.observability import TraceRecorder
@@ -28,10 +32,25 @@ FAILURE_RESPONSE = {
 
 
 class ModelsLoggingTests(unittest.TestCase):
+    def test_openai_adapter_rejects_redirects_before_resending_credentials(
+        self,
+    ) -> None:
+        redirected = _NoRedirectHandler().redirect_request(
+            Request("https://provider.example/v1/chat/completions"),
+            BytesIO(),
+            302,
+            "Found",
+            HTTPMessage(),
+            "https://other.example/collect",
+        )
+        self.assertIsNone(redirected)
+
     def test_json_protocol_extracts_fenced_object(self) -> None:
         import json
 
-        value = parse_model_json(f"```json\n{json.dumps(FAILURE_RESPONSE)}\n```", ModelTask.FAILURE_ANALYSIS)
+        value = parse_model_json(
+            f"```json\n{json.dumps(FAILURE_RESPONSE)}\n```", ModelTask.FAILURE_ANALYSIS
+        )
         self.assertEqual(value["primary_failure"], "bad flag")
 
     def test_json_protocol_rejects_dangerous_patch_operation(self) -> None:
@@ -45,11 +64,41 @@ class ModelsLoggingTests(unittest.TestCase):
         with self.assertRaises(ModelProtocolError):
             parse_model_json(json.dumps(malformed), ModelTask.FAILURE_ANALYSIS)
 
+    def test_json_protocol_bounds_analysis_arrays_and_patch_assumptions(self) -> None:
+        oversized_analysis = dict(FAILURE_RESPONSE)
+        oversized_analysis["recommended_files"] = [
+            f"src/{index}.c" for index in range(51)
+        ]
+        with self.assertRaises(ModelProtocolError):
+            parse_model_json(json.dumps(oversized_analysis), ModelTask.FAILURE_ANALYSIS)
+
+        oversized_patch = {
+            "repair_family": "source_port",
+            "rationale": "bounded repair",
+            "assumptions": [f"assumption {index}" for index in range(21)],
+            "edits": [
+                {
+                    "operation": "replace_lines",
+                    "path": "src/a.c",
+                    "expected_text": "old",
+                    "replacement": "new",
+                    "rationale": "portable",
+                }
+            ],
+        }
+        with self.assertRaises(ModelProtocolError):
+            parse_model_json(json.dumps(oversized_patch), ModelTask.PATCH_PLANNING)
+
     def test_json_protocol_rejects_nonfinite_json_numbers(self) -> None:
         raw = (
             '{"primary_failure":"x","failure_stage":"compile","claims":[],'
             '"hypotheses":[NaN],"recommended_files":[]}'
         )
+        with self.assertRaises(ModelProtocolError):
+            parse_model_json(raw, ModelTask.FAILURE_ANALYSIS)
+
+    def test_json_protocol_rejects_excessive_nesting(self) -> None:
+        raw = '{"value":' + "[" * 2_000 + "0" + "]" * 2_000 + "}"
         with self.assertRaises(ModelProtocolError):
             parse_model_json(raw, ModelTask.FAILURE_ANALYSIS)
 
@@ -64,7 +113,13 @@ class ModelsLoggingTests(unittest.TestCase):
 
     def test_patch_prompt_states_exact_machine_contract(self) -> None:
         prompt = system_prompt(ModelTask.PATCH_PLANNING)
-        for required in ("repair_family", "rationale", "assumptions", "edits", "expected_text"):
+        for required in (
+            "repair_family",
+            "rationale",
+            "assumptions",
+            "edits",
+            "expected_text",
+        ):
             self.assertIn(required, prompt)
         self.assertIn("one to five", prompt)
 
@@ -79,7 +134,9 @@ class ModelsLoggingTests(unittest.TestCase):
                 )
                 self.payloads: list[dict[str, object]] = []
 
-            def _request(self, payload: dict[str, object], timeout: float) -> dict[str, object]:
+            def _request(
+                self, payload: dict[str, object], timeout: float
+            ) -> dict[str, object]:
                 del timeout
                 self.payloads.append(payload)
                 content = (
@@ -120,7 +177,9 @@ class ModelsLoggingTests(unittest.TestCase):
                     strong_model="strong",
                 )
 
-            def _request(self, payload: dict[str, object], timeout: float) -> dict[str, object]:
+            def _request(
+                self, payload: dict[str, object], timeout: float
+            ) -> dict[str, object]:
                 del payload, timeout
                 return {
                     "choices": [{"message": {"content": json.dumps(FAILURE_RESPONSE)}}],
@@ -154,33 +213,72 @@ class ModelsLoggingTests(unittest.TestCase):
             fast_model="fast",
             strong_model="strong",
         )
-        with patch("src.models.openai_compatible.urllib.request.urlopen", return_value=OversizedResponse()):
+        with patch(
+            "src.models.openai_compatible._NO_REDIRECT_OPENER.open",
+            return_value=OversizedResponse(),
+        ):
             with self.assertRaises(ModelProtocolError):
                 client._request({"model": "fast"}, 1)
+
+    def test_openai_adapter_rejects_oversized_message_before_repair_retry(self) -> None:
+        class StubClient(OpenAICompatibleModelClient):
+            def __init__(self) -> None:
+                super().__init__(
+                    base_url="http://127.0.0.1:1/v1",
+                    api_key=None,
+                    fast_model="fast",
+                    strong_model="strong",
+                )
+                self.requests = 0
+
+            def _request(
+                self, payload: dict[str, object], timeout: float
+            ) -> dict[str, object]:
+                del payload, timeout
+                self.requests += 1
+                return {"choices": [{"message": {"content": "x" * 100_001}}]}
+
+        client = StubClient()
+        with self.assertRaisesRegex(ModelProtocolError, "message content exceeds"):
+            client.complete_json(
+                task=ModelTask.FAILURE_ANALYSIS,
+                tier=ModelTier.FAST,
+                system_prompt="system",
+                user_prompt="input",
+                timeout_seconds=1,
+            )
+        self.assertEqual(client.requests, 1)
 
     def test_mock_model_is_deterministic_and_records_routing(self) -> None:
         client = MockModelClient({ModelTask.FAILURE_ANALYSIS: FAILURE_RESPONSE})
         response = client.complete_json(
-            task=ModelTask.FAILURE_ANALYSIS, tier=ModelTier.FAST,
-            system_prompt="system", user_prompt="input", timeout_seconds=1,
+            task=ModelTask.FAILURE_ANALYSIS,
+            tier=ModelTier.FAST,
+            system_prompt="system",
+            user_prompt="input",
+            timeout_seconds=1,
         )
         self.assertEqual(response.data["primary_failure"], "bad flag")
         self.assertEqual(client.calls[0].task, ModelTask.FAILURE_ANALYSIS)
         self.assertEqual(client.calls[0].tier, ModelTier.FAST)
 
     def test_router_escalates_only_on_explicit_signal(self) -> None:
-        client = MockModelClient({
-            ModelTask.FAILURE_ANALYSIS: [FAILURE_RESPONSE, FAILURE_RESPONSE]
-        })
+        client = MockModelClient(
+            {ModelTask.FAILURE_ANALYSIS: [FAILURE_RESPONSE, FAILURE_RESPONSE]}
+        )
         router = ModelRouter(client, UsageBudget(5, 3, 10_000), 1.0)
         router.complete(
             task=ModelTask.FAILURE_ANALYSIS, system_prompt="s", user_prompt="u"
         )
         router.complete(
-            task=ModelTask.FAILURE_ANALYSIS, system_prompt="s", user_prompt="u",
+            task=ModelTask.FAILURE_ANALYSIS,
+            system_prompt="s",
+            user_prompt="u",
             signals=EscalationSignals(critical_confidence_low=True),
         )
-        self.assertEqual([call.tier for call in client.calls], [ModelTier.FAST, ModelTier.STRONG])
+        self.assertEqual(
+            [call.tier for call in client.calls], [ModelTier.FAST, ModelTier.STRONG]
+        )
 
     def test_router_can_force_strong_tier_for_controlled_comparison(self) -> None:
         client = MockModelClient({ModelTask.FAILURE_ANALYSIS: FAILURE_RESPONSE})
@@ -198,7 +296,14 @@ class ModelsLoggingTests(unittest.TestCase):
         self.assertEqual(router.records[-1].tier, ModelTier.STRONG)
 
     def test_cost_budget_is_optional_and_bounded_when_configured(self) -> None:
-        budget = UsageBudget(5, 3, 10_000, max_cost_usd=0.000001, input_rate_per_million=10, output_rate_per_million=10)
+        budget = UsageBudget(
+            5,
+            3,
+            10_000,
+            max_cost_usd=0.000001,
+            input_rate_per_million=10,
+            output_rate_per_million=10,
+        )
         with self.assertRaises(BudgetExhaustedError):
             budget.authorize(strong=False, estimated_input_tokens=1000)
         unknown = UsageBudget(5, 3, 10_000)
@@ -266,7 +371,10 @@ class ModelsLoggingTests(unittest.TestCase):
                 output_tokens=45,
             )
             trace.record("finalize", "ignored")
-            events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            events = [
+                json.loads(line)
+                for line in path.read_text(encoding="utf-8").splitlines()
+            ]
         self.assertEqual(len(events), 1)
         attributes = events[0]["attributes"]
         self.assertEqual(attributes["api_key"], "[REDACTED]")
@@ -274,7 +382,9 @@ class ModelsLoggingTests(unittest.TestCase):
         self.assertEqual(attributes["input_tokens"], 123)
         self.assertEqual(attributes["output_tokens"], 45)
 
-    def test_local_trace_redacts_nested_secrets_and_serializes_nonfinite_values(self) -> None:
+    def test_local_trace_redacts_nested_secrets_and_serializes_nonfinite_values(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "execution-trace.jsonl"
             trace = TraceRecorder(path, "case-1")

@@ -2,18 +2,41 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
 import urllib.request
+from typing import IO
 
 from ..errors import ModelError, ModelProtocolError
+from ..json_safety import reject_excessive_json_nesting
 from ..schemas import JSONValue
 from .base import ModelResponse, ModelTask, ModelTier
 from .json_protocol import parse_model_json
 
 
 _MAX_RESPONSE_BYTES = 5_000_000
+_MAX_MODEL_CONTENT_CHARACTERS = 100_000
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects so bearer credentials never cross an endpoint boundary."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> None:
+        del req, fp, code, msg, headers, newurl
+        return None
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
 
 
 def _reject_nonfinite_constant(value: str) -> None:
@@ -40,32 +63,50 @@ def _usage_tokens(value: JSONValue, fallback_characters: int) -> int:
 
 
 class OpenAICompatibleModelClient:
-    def __init__(self, *, base_url: str, api_key: str | None, fast_model: str, strong_model: str):
+    def __init__(
+        self, *, base_url: str, api_key: str | None, fast_model: str, strong_model: str
+    ):
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._models = {ModelTier.FAST: fast_model, ModelTier.STRONG: strong_model}
 
-    def _request(self, payload: dict[str, JSONValue], timeout: float) -> dict[str, JSONValue]:
+    def _request(
+        self, payload: dict[str, JSONValue], timeout: float
+    ) -> dict[str, JSONValue]:
         data = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         request = urllib.request.Request(
-            f"{self._base_url}/chat/completions", data=data, headers=headers, method="POST"
+            f"{self._base_url}/chat/completions",
+            data=data,
+            headers=headers,
+            method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
                 body = response.read(_MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise ModelError(f"OpenAI-compatible request failed: {type(exc).__name__}") from exc
+            raise ModelError(
+                f"OpenAI-compatible request failed: {type(exc).__name__}"
+            ) from exc
         if len(body) > _MAX_RESPONSE_BYTES:
-            raise ModelProtocolError("provider response exceeds the maximum allowed size")
-        try:
-            result = json.loads(
-                body.decode("utf-8"), parse_constant=_reject_nonfinite_constant
+            raise ModelProtocolError(
+                "provider response exceeds the maximum allowed size"
             )
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-            raise ModelProtocolError("provider response is not valid UTF-8 JSON") from exc
+        try:
+            text = body.decode("utf-8")
+            reject_excessive_json_nesting(text)
+            result = json.loads(text, parse_constant=_reject_nonfinite_constant)
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+            RecursionError,
+        ) as exc:
+            raise ModelProtocolError(
+                "provider response is not valid UTF-8 JSON"
+            ) from exc
         if not isinstance(result, dict):
             raise ModelProtocolError("provider response root must be an object")
         return result
@@ -73,7 +114,11 @@ class OpenAICompatibleModelClient:
     @staticmethod
     def _content(response: dict[str, JSONValue]) -> str:
         choices = response.get("choices")
-        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        if (
+            not isinstance(choices, list)
+            or not choices
+            or not isinstance(choices[0], dict)
+        ):
             raise ModelProtocolError("provider response has no choices")
         message = choices[0].get("message")
         if not isinstance(message, dict):
@@ -81,6 +126,10 @@ class OpenAICompatibleModelClient:
         content = message.get("content")
         if not isinstance(content, str):
             raise ModelProtocolError("provider response has no message content")
+        if len(content) > _MAX_MODEL_CONTENT_CHARACTERS:
+            raise ModelProtocolError(
+                "provider message content exceeds the maximum allowed size"
+            )
         return content
 
     def complete_json(
@@ -136,8 +185,12 @@ class OpenAICompatibleModelClient:
         output_tokens = 0
         for item, input_characters, output_characters in responses:
             usage = item.get("usage", {})
-            input_value = usage.get("prompt_tokens") if isinstance(usage, dict) else None
-            output_value = usage.get("completion_tokens") if isinstance(usage, dict) else None
+            input_value = (
+                usage.get("prompt_tokens") if isinstance(usage, dict) else None
+            )
+            output_value = (
+                usage.get("completion_tokens") if isinstance(usage, dict) else None
+            )
             input_tokens += _usage_tokens(input_value, input_characters)
             output_tokens += _usage_tokens(output_value, output_characters)
         return ModelResponse(
