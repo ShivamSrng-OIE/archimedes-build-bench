@@ -1,33 +1,35 @@
 # Archimedes release, submission, and evaluation record
 
-Last checked: **3 October 2026 EDT**
+Last checked: **4 October 2026 EDT**
 
 ## Selected organizer-qualified final
 
 ```text
 Agent:           archimedes
-Agent version:   0.2.11
-Submission ID:   20260921T155822Z-9f76439b
+Agent version:   0.2.14
+Submission ID:   20261003T193341Z-1c80de94
 Portal status:   Qualified; Final version selected
 Hosted Smoke:    hello passed 1/1, including clean-patch final validation
-Selected:        2 October 2026 at 11:41 PM EDT
-Source commit:   e23bb1a
-Archive:         dist/agent-submission-v0.2.11-ready.zip
-Archive bytes:   91,407
-SHA-256:         d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be
+Selected:        4 October 2026 at 10:57 AM EDT
+Source commit:   093b7f2
+Archive:         dist/agent-submission-v0.2.14-ready.zip
+Archive bytes:   100,092
+SHA-256:         714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
 ```
 
-The live portal preserved this selection after reload. It showed no completed organizer Full
-Evaluation, score, or rank at the last check. The organizer—not a Hosted Smoke Test or Development
-Validation run—creates the canonical hidden evaluation and leaderboard result.
+The authenticated portal confirmed this selection, showed the complete SHA-256 above, and marked the
+v0.2.14 history row `Final version selected`. It showed no completed organizer Full Evaluation,
+score, or rank. The organizer—not a Hosted Smoke Test or Development Validation run—creates the
+canonical hidden evaluation and leaderboard result.
 
 The exact v0.2.11 repaired worktree passed `rocm-llvm` ARM64 Development Validation in run
 `DV-20260921T154515Z-2ce55011`. The organizer-corrected earlier run
 `DV-20260921T040125Z-5afed455` passed `node-re2`, `buteo-sync-plugins`, and `qmidiarp`. This is four
-public target-build observations across two runs, not a single four-Case v0.2.11 run or a hidden
-score.
+public target-build observations across two runs. The selected v0.2.14 replay and focused bundle
+produce byte-identical repair files. This is regression equivalence to four public build observations,
+not a single four-Case v0.2.14 run or a hidden score.
 
-## Organizer-qualified successor awaiting explicit final selection
+## Qualification and regression evidence
 
 ```text
 Agent version:   0.2.14
@@ -40,7 +42,7 @@ Archive bytes:   100,092
 SHA-256:         714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
 Example Case:    hello passed initial reproduction, Agent, patch, and final build
 Submission ID:   20261003T193341Z-1c80de94
-Portal status:   Qualified; Hosted Smoke passed 1/1
+Portal status:   Qualified; Hosted Smoke passed 1/1; Final version selected
 ```
 
 The v0.2.14 archive was emitted by the official `bb ready` workflow in a privileged Linux Docker
@@ -61,8 +63,11 @@ The portal records digest prefix `714bec9725b9...`, passed static checks, and a 
 Smoke Test with final validation. The displayed terminal log was transcribed to
 `runs/submission-20261003T193341Z-1c80de94/PORTAL_EVIDENCE.md` with SHA-256
 `f988aa35d1401db25bd35f752677798f8895909cea580e63d51b0cfb4fc9bce8`; it is clearly labeled as a
-transcription because the download control did not yield a local file. Uploading and qualification
-did not replace v0.2.11; selecting v0.2.14 is a distinct consequential action.
+transcription because the download control did not yield a local file. After an explicit action-time
+confirmation, v0.2.14 replaced v0.2.11 as the selected final on 4 October 2026 at 10:57 AM EDT.
+The final portal state is transcribed separately in
+`runs/submission-20261003T193341Z-1c80de94/FINAL_SELECTION.md`, SHA-256
+`3c41ee48ca2df23c0f1b6fea1089bb4b1803c8fccff02344b0b6debde5965a05`.
 
 An independent audit of the exact ZIP found 81 unique members, only `agent.yaml`,
 `requirements.lock`, `README.md`, and `src/` at the root, deterministic timestamps, regular deflated
@@ -131,8 +136,8 @@ and scan the staged archive—not merely the working tree—for prohibited conte
 3. Compare the complete portal digest with the local SHA-256 and preserve the submission ID.
 4. Wait for static checking and run/await Hosted Smoke exactly as the portal directs.
 5. Inspect every retained packaging, execution, patch, and final-build diagnostic.
-6. Keep v0.2.11 selected unless and until v0.2.14 independently qualifies and the participant
-   explicitly confirms replacing the selected final at that consequential step.
+6. Verify that the selected final remains v0.2.14, submission `20261003T193341Z-1c80de94`, with the
+   complete SHA-256 recorded above; do not replace it without a new explicit action-time confirmation.
 7. Preserve any later organizer Full Evaluation ID and permitted logs separately from public
    Development Validation and Hosted Smoke evidence.
 
@@ -162,9 +167,9 @@ Keep these for provenance, but do not attribute later code to them:
 | Version | Submission | SHA-256 | Evidence |
 |---|---|---|---|
 | 0.2.9 | `20260907T041925Z-629a77c4` | `6a86ef3249bceebf4e06a037863942284c22715867413e67dc56069c50465668` | Qualified; Hosted Smoke 1/1 |
-| 0.2.11 | `20260921T155822Z-9f76439b` | `d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be` | Qualified; Hosted Smoke 1/1; selected final |
+| 0.2.11 | `20260921T155822Z-9f76439b` | `d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be` | Qualified; Hosted Smoke 1/1; former final selection |
 | 0.2.12 | `20261003T110859Z-cf35ceb6` | `80c22280d3cfe5a94523c5e40c3e8cf3e0a6cce0883625202bfe1e6bc44fd2f7` | Qualified; Hosted Smoke 1/1; not selected |
 | 0.2.13 | `20261003T181216Z-814ddbfa` | `02650f9e429e7e780c5d610ba148c8fb08972b57246663442cecb1c16d20cb09` | Qualified; Hosted Smoke 1/1; not selected |
-| 0.2.14 | `20261003T193341Z-1c80de94` | `714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed` | Qualified; Hosted Smoke 1/1; not selected |
+| 0.2.14 | `20261003T193341Z-1c80de94` | `714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed` | Qualified; Hosted Smoke 1/1; selected final |
 
 The comprehensive current rules/site/corpus audit is in `COMPETITION_AUDIT.md`.

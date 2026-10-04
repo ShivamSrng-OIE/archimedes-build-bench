@@ -1,17 +1,20 @@
 # Build-Bench participant contract and platform audit
 
-Last comprehensive review: **3 October 2026 EDT**
+Last comprehensive review: **4 October 2026 EDT**
 
 ## Current conclusion
 
-The currently selected final version is the immutable, organizer-qualified `archimedes` v0.2.11
-submission `20260921T155822Z-9f76439b`, SHA-256
-`d9b6c41801b58720f493810e5c3b3469b34d39ab98efd065ad1931c32697f4be`. Its Hosted Smoke
-Test passed 1/1, and its exact repaired public worktrees have four successful ARM64 Development
-Validation observations across two runs. Those facts establish packaging, protocol, and four
-public target-build results; they are not a hidden Full Evaluation score or leaderboard result.
+The currently selected final version is the immutable, organizer-qualified `archimedes` v0.2.14
+submission `20261003T193341Z-1c80de94`, SHA-256
+`714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed`. The authenticated portal
+showed the full digest and `Final version selected` after the participant explicitly confirmed the
+replacement on 4 October 2026 at 10:57 AM EDT. Its Hosted Smoke Test passed 1/1. Its four repaired
+public worktrees are byte-identical to the v0.2.11 repairs with four successful ARM64 Development
+Validation observations across two runs. Those facts establish packaging, protocol, regression
+equivalence, and four public target-build results; they are not a hidden Full Evaluation score or
+leaderboard result.
 
-Archimedes v0.2.14 is the organizer-qualified successor. The official Starter Kit `bb ready`
+The official Starter Kit `bb ready`
 workflow completed under rc.3, including the `hello` Example Case and clean-patch final build. It
 produced:
 
@@ -29,8 +32,7 @@ v0.2.14 changes harden early failure reporting, explicit allowed-path handling, 
 bounded JSON depth, redirect-free authenticated model requests, strict configuration values,
 repository-wide repair uniqueness, probe working directories, and safe re-planning after a policy
 rejection. Its four public-case worktrees remain byte-for-byte identical to the v0.2.11
-target-build-qualified repairs. v0.2.14 is qualified but is not selected; v0.2.11 remains the final
-selection until the participant explicitly replaces it.
+target-build-qualified repairs. v0.2.14 is qualified and selected for organizer-run Full Evaluation.
 
 The release commit passed 149 tests with two Windows-specific symlink skips and 56 subtests, Ruff,
 strict mypy across 75 source files, bytecode compilation, and whitespace checks. The exact uploaded
@@ -78,7 +80,7 @@ organizer-only Validator configuration, Docker Socket access, or another team's 
 | Data and downloads | The live downloads page labels the Starter Kit rc.2 while the participant guide and actual current kit/runtime identify rc.3; the public development corpus contains 200 selectable Cases. | The verified local kit and immutable image references are rc.3. The 200 logs and released sources were replayed without bundling the dataset. The page-label discrepancy is retained as an organizer-side ambiguity. |
 | Development Validation | Upload a source-package layout or complete unpacked repaired source trees; select public Cases; preserve run ID/logs; no secrets; results do not affect the leaderboard. | Complete unpacked worktrees are packaged under the documented manifest. Four target builds have passed for the v0.2.11 repair bytes. |
 | Team and login | Captain maintains the real roster and account; credentials stay outside artifacts. | Authenticated state was inspected without persisting credentials in the repository. Roster truth remains a participant attestation. |
-| My submissions | Uploads are immutable. Static checks and Hosted Smoke qualify a version. Final selection is a distinct state. | v0.2.11 is qualified and selected. v0.2.14 is independently qualified and available for explicit selection. |
+| My submissions | Uploads are immutable. Static checks and Hosted Smoke qualify a version. Final selection is a distinct state. | v0.2.14 is qualified and selected. The portal shows its complete digest and selection timestamp; v0.2.11 remains immutable history. |
 | Evaluation detail | Organizer evaluations move through queued/preparing/evaluating/finalizing/completed; only a completed evaluation can yield a score. | No Full Evaluation record exists for Archimedes at the audit time. |
 | Leaderboard | Hosted Smoke and Development Validation do not rank teams; the page currently says each Team may run one Full Evaluation, and only compatible organizer-published completed evaluations count. | No score, rank, or leaderboard claim is made; the account has zero organizer evaluations. |
 
@@ -196,12 +198,12 @@ not Agent failures and were not bypassed by changing the official runner.
 
 ## Release discipline
 
-1. Treat v0.2.11 as the selected final until the participant explicitly confirms selecting the
-   independently qualified v0.2.14 upload.
+1. Treat v0.2.14 submission `20261003T193341Z-1c80de94` as the selected final. Do not replace it
+   without a new explicit action-time confirmation.
 2. Upload only the exact official `bb ready` ZIP and compare its complete SHA-256 with the portal.
 3. Preserve static-check, Hosted Smoke, Development Validation, and organizer-evaluation evidence
    separately; never promote one evidence class into another.
 4. Re-audit live Rules, FAQ, Data, Timeline, and portal state immediately before final selection or
    organizer evaluation because published parameters can change.
-5. Do not select a replacement final version without the participant's explicit confirmation at the
-   irreversible selection step.
+5. Preserve the v0.2.14 selection and wait for the organizer-run Full Evaluation; no participant
+   start control or official score exists at the current audit time.
