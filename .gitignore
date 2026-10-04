@@ -1,10 +1,15 @@
 .env
-docs/
+.venv/
+venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
 dev/*.jsonl
 dev/*.csv
 dev/*.html
