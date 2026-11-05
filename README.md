@@ -78,7 +78,7 @@ not `/tmp`). Then:
 ```
 
 `bb ready` checks the agent, runs the example case end to end and writes
-`dist/agent-submission.zip`.
+the submission ZIP into the Starter Kit's own `dist/` folder.
 
 ## Project structure
 

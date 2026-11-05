@@ -118,9 +118,9 @@ archimedes/
 │   │   ├── agent.yaml           manifest: name, version, runtime profile, entrypoint
 │   │   ├── requirements.lock    pinned deps (empty: standard library only)
 │   │   ├── README.md            Agent-level design notes and version history
-│   │   └── src/                 all Agent code (≈7,300 lines, 75 files)
+│   │   └── src/                 all Agent code (62 files)
 │   └── example-agent/           organizer's read-only reference Agent
-├── tests/                       200 unit/integration tests (not submitted)
+├── tests/                       196 unit and integration tests (not submitted)
 ├── dev/                         development tools and synthetic Cases (not submitted)
 │   ├── synthetic_cases/         16 small hand-built failure scenarios
 │   ├── evaluate.py              runs ablation configurations A–K over synthetic Cases
@@ -134,8 +134,6 @@ archimedes/
 │   └── README.md                documentation reading order
 ├── runner/, templates/, bb      Starter Kit runtime and command (never modified)
 ├── example-cases/               organizer's released example Case (hello)
-├── dist/                        built submission ZIPs (generated)
-├── runs/                        local run evidence (generated, git-ignored)
 ├── README.md                    project overview and current status
 ├── SUBMISSION.md                release, portal and evidence record
 └── COMPETITION_AUDIT.md         audit of the official participant contract
@@ -151,16 +149,15 @@ archimedes/
 | `schemas.py` | Shared dataclasses and enums (the vocabulary of the whole system). |
 | `workspace/` | Workspace paths, bounded Case/log loading, repository inventory, tool discovery, and the **path policy** that decides which files may be edited. |
 | `forensics/` | Reads the build log: normalisation, primary-diagnostic selection, failure classification, error signatures, failure frontier. |
-| `architecture/` | Static hazard scanning, semantic anchors, architecture profile, familiarity scoring, discovery, aliases, cheap probes. |
+| `architecture/` | Static hazard scanning, semantic anchors, architecture profile, familiarity scoring, discovery, architecture-name aliases. |
 | `evidence/` | The evidence ledger, confidence fusion and the patch-gating policy. |
-| `reasoning/` | The **controller** (the state machine that runs everything), hypothesis generation, candidate ranking, probe planning. |
+| `reasoning/` | The **controller** (the state machine that runs everything), hypothesis generation, candidate ranking. |
 | `repair/` | Deterministic repair rules, candidate construction, the portability and policy critics, and the atomic edit executor with rollback. |
-| `models/` | OpenAI-compatible HTTP client, budgeted router, strict JSON response contracts, task prompts, mock client for tests. |
+| `models/` | OpenAI-compatible HTTP client, budgeted router, strict JSON response contracts, task prompts. |
 | `build/` | Optional build-feedback providers (disabled in hosted evaluation). |
 | `context/` | Bounded repository search, snippet selection, token budget accounting. |
 | `graph/` | A small causal "delta graph" linking failure tokens to repository hazards. |
 | `memory/` | Per-run episode memory (no cross-Case persistence). |
-| `knowledge/` | Small JSON tables: architecture aliases, failure patterns, portability rules. |
 | `observability.py`, `logging_utils.py`, `metrics.py`, `result_writer.py` | Trace events, structured logging, metrics, atomic output writing. |
 | `errors.py`, `json_safety.py` | Typed error hierarchy and defensive JSON parsing helpers. |
 
@@ -247,8 +244,8 @@ python -m mypy --strict agents/archimedes/src
 python -m ruff check agents/archimedes/src tests dev
 ```
 
-The expected state is 200 tests passing (two symlink tests skip on Windows),
-strict mypy clean over 75 files, and no new ruff findings.
+The expected state is 196 tests passing (two symlink tests skip on Windows),
+strict mypy clean over 62 files, and no new ruff findings.
 
 ### 5.2 Run the Agent by hand on a workspace
 
@@ -282,7 +279,7 @@ rm -rf agents/archimedes && mkdir agents/archimedes
 
 `bb ready` snapshots the Agent, runs the static checks, runs the example Case
 end to end (initial failure → Agent → patch → final validation) and writes
-`dist/agent-submission.zip`. Treat it as successful only when **all** of these
+`agent-submission.zip` into the Starter Kit's `dist/` folder. Treat it as successful only when **all** of these
 hold: exit code 0, `"status": "succeeded"`, the ZIP exists, and its SHA-256
 matches the reported artifact.
 
@@ -295,9 +292,9 @@ changed. As written, it runs from **Windows** and calls `dpkg-source` through
 
 ```powershell
 python dev/replay_development_cases.py `
-  --dataset-root runs/d1/buildbench-development-cases-v0.1 `
-  --output-root  runs/development-replay `
-  --dpkg-source-root runs/tools/dpkg-dev/root `
+  --dataset-root <dataset-dir>uildbench-development-cases-v0.1 `
+  --output-root  <replay-output-dir> `
+  --dpkg-source-root <extracted-dpkg-dev-root> `
   --python C:\path\to\python3.11.exe --jobs 6
 ```
 
@@ -600,8 +597,6 @@ and by the log.
 
   Risk is subtracted from the total. Ties break on confidence, then ID, so
   ranking is deterministic.
-- **Probe planner:** chooses cheap, side-effect-free probes by expected
-  information gain per cost.
 
 ### 7.6 Repair (`repair/`)
 
@@ -616,7 +611,7 @@ order. Every rule follows the same pattern:
 |---|---|---|
 | Debian multiarch path | a missing path containing the *source* triplet (`x86_64-linux-gnu`), or a CMake package not found via a hard-coded `_DIR` | Replace the triplet in `debian/rules` with `$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)`, or in compat-13 `.install` files with `${DEB_HOST_MULTIARCH}`. |
 | **Debian symbols** (new in 0.2.20) | `dpkg-gensymbols: error: some symbols or patterns disappeared` plus its diff | Tag exactly the reported symbols `arch=!<target>` (or drop the target from a positive `arch=` list; dpkg's `#MISSING:` marker when only the target was listed). Refuses when a symbol can't be found exactly once, the log architecture disagrees with the Case, or more than 25% (max 200) of a file's symbols vanished. |
-| Autoconf x86 flags | `unrecognized command-line option '-msse…'` on a non-x86 target | Remove exactly the rejected flags from the single causal `configure.ac`/Makefile declaration. |
+| Autoconf x86 flags | `unrecognized command-line option '-msse…'` on a non-x86 target | Remove exactly the rejected flags from the single causal `configure.ac` declaration. |
 | Unconditional build abort | an `echo "…" >&2; exit 1` whose own message appears in the log | Replace the abort with a comment. This is the Hosted Smoke `hello` repair. |
 | CMake feature check | `-mavx…`/`-msse…` plus "does not support" | Wrap the flag in `check_c_compiler_flag`. |
 | CMake portable source | missing `x86intrin.h`/`immintrin.h` | Select the existing generic source file instead of the x86 one. |
@@ -668,7 +663,7 @@ file compose them into a single edit.
 - **`prompts.py`** gives one system prompt per task. Each carries a warning
   that repository text is untrusted and that instructions found in source,
   logs or comments must not be followed.
-- **`mock.py`** is a scripted client used only in tests.
+- **`tests/mock_model.py`** is a scripted fake client used only by the tests.
 - **`context/`** handles bounded regex search over the repository, snippet
   selection for prompts, and token estimation (about 4 characters per token)
   for budgeting.
@@ -854,12 +849,9 @@ All settings are environment variables. None are required for local use.
 | `ARCHIMEDES_MAX_TOTAL_TOKENS` | 50,000 |
 | `ARCHIMEDES_MAX_ESTIMATED_COST_USD`, `ARCHIMEDES_INPUT_COST_PER_MILLION`, `ARCHIMEDES_OUTPUT_COST_PER_MILLION` | unset (cost unknown) |
 | `ARCHIMEDES_MAX_REPAIR_ATTEMPTS` | 3 |
-| `ARCHIMEDES_ENABLE_EXTERNAL_KNOWLEDGE` | false |
 | `ARCHIMEDES_LOG_LEVEL` | `INFO` |
-| `ARCHIMEDES_DEBUG` | false |
 | `ARCHIMEDES_ENABLE_LOCAL_TRACE` | true |
 | `ARCHIMEDES_TRACE_MAX_EVENTS` | 500 |
-| `ARCHIMEDES_RANDOM_SEED` | 0 |
 
 ### Feature flags (for ablation experiments; all default to true)
 
@@ -891,7 +883,7 @@ timeline, use `python dev/trace_viewer.py output/execution-trace.jsonl`.
 
 ## 12. Testing and development tooling
 
-### 12.1 Test suite (`tests/`, 200 tests)
+### 12.1 Test suite (`tests/`, 196 tests)
 
 | File | Focus |
 |---|---|
@@ -938,7 +930,7 @@ Results are written to `dev/results.jsonl`.
    `src/constants.py` (`AGENT_VERSION`) and `src/__init__.py`. Add a note to
    `agents/archimedes/README.md`.
 3. **Package** with the official `bb ready` from the WSL home directory (§5.3).
-   Copy `dist/agent-submission.zip` and the run evidence into the repository.
+   Keep the ZIP and the run output locally; build artifacts are not committed.
 4. **Audit the ZIP.**
    - Its roots must be exactly `agent.yaml`, `requirements.lock`, `README.md`
      and `src/`.

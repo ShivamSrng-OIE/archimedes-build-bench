@@ -1,98 +1,110 @@
-# Archimedes development evaluation
+# Development tools
 
-The synthetic corpus and evaluation runner are deliberately outside `agents/archimedes`; they are
-not part of the competition bundle. The corpus spans compiler flags, optimized source, guards,
-inline assembly, fallback selection, atomic linkage, ABI width, endianness, packaging/dependencies,
-generated configuration, multi-file consistency, artifact paths, intrinsics, feature detection, and
-an unfamiliar OOD target.
+Scripts for testing Archimedes during development. Nothing in `dev/` is part of the Agent
+submission ZIP. Run every command from the repository root.
 
-`replay_development_cases.py` prepares complete final worktrees from the released public Debian
-source packages. On Windows it uses an unprivileged, workspace-local extraction of `dpkg-dev` and
-`libdpkg-perl` through the `Ubuntu` WSL distribution; `.bz2` sources additionally need the local
-`bzip2` and `libbz2-1.0` packages. These tools live under ignored `runs/tools/` and are never part of
-the Agent submission or a Worktree Bundle. After extracting those packages into
-`runs/tools/dpkg-dev/root`, run:
+| Script | What it does |
+|---|---|
+| `evaluate.py` | Runs the synthetic cases in `synthetic_cases/` under one configuration and writes a result table. |
+| `trace_viewer.py` | Turns an Agent execution trace into a single HTML page. |
+| `replay_development_cases.py` | Runs the Agent over the 200 public Development Cases and keeps each final worktree. |
+| `package_worktree_bundle.py` | Packs a replay's worktrees into a ZIP for the organizer's Development Validation service. |
+| `submission_preflight.py` | Checks a packaged submission ZIP against the current Agent source before upload. |
 
-```text
-python dev/replay_development_cases.py \
-  --dataset-root runs/d1/buildbench-development-cases-v0.1 \
-  --output-root runs/development-replay \
-  --python C:\path\to\python3.11.exe \
-  --case CASE_ID
-```
+None of these scripts builds packages. Only the organizer's Validator (or Development Validation
+service) can show that a repair builds on the target architecture.
 
-Omit `--case` to replay all 200 Cases. A replay means the Agent completed and a final worktree was
-preserved; it does not mean the package builds. Only the organizer's Development Validation service
-provides target-architecture build evidence.
+## Synthetic evaluation
 
-Create a deterministic Development Validation Worktree Bundle from one frozen replay with:
-
-```text
-python dev/package_worktree_bundle.py \
-  --replay-root runs/development-replay-v0214-audit-four \
-  --output dist/buildbench-development-worktrees-v0.2.14-four-rebuilt.zip
-```
-
-The packager fails closed on incomplete Cases, duplicate Case IDs, symlinks, and non-regular files.
-It omits version-control and quilt state such as `.git*`, `.hg`, `.svn`, and `.pc`, which are
-repository metadata rather than package source and are rejected by the validation service.
-It follows the live portal contract exactly: a root `manifest.json` using schema `0.1` and suite
-`development-recommended-v1`, plus each complete repaired package source tree under
-`cases/<case-id>/worktree/input/`. It does not add Case-level manifests or platform metadata. This
-bundle is for Development Validation; it is distinct from `dist/agent-submission.zip`.
-
-The historical frozen v0.2.11 bundle had SHA-256
-`d6955489d19d1a2cb45c1a010c900182948b2b33ee0f7368058b60d3dd358b40` and was validated
-for the `rocm-llvm` ARM64 Case in run `DV-20260921T154515Z-2ce55011` (passed on attempt 1).
-The retained v0.2.14 four-Case bundle has the same bytes and hash. Keep every Worktree Bundle
-distinct from the qualified Agent ZIP documented in `SUBMISSION.md`.
-
-The v0.2.14 regression replay summary is retained under
-`runs/development-replay-v0214-final-20261003`: all 200 released source Cases completed and only the
-same four expected Cases were modified. Its expanded worktrees were pruned after the summary and
-focused evidence were verified because they are reproducible multi-gigabyte output. The complete
-focused four-Case replay remains under `runs/development-replay-v0214-audit-four`; its nine
-changed-file digests match the corresponding v0.2.11 validation candidates exactly. This establishes
-repair-output equivalence, not new organizer build evidence. Its packaged bundle is
-`dist/buildbench-development-worktrees-v0.2.14-four.zip`, 2,251,539 bytes, SHA-256
-`d6955489d19d1a2cb45c1a010c900182948b2b33ee0f7368058b60d3dd358b40`—byte-for-byte
-identical to the frozen v0.2.11 bundle whose four repairs were validated across the two organizer
-runs. A redundant server rerun adds no new repair evidence; never confuse this Worktree Bundle with
-`dist/agent-submission-v0.2.14-ready.zip`.
-
-Use a fixed case order, seed, model, generation settings, model/build budget, and wall-time budget
-when comparing configurations. Change only one component for an ablation. The default runner does
-not execute package builds, so `verified_build_success` stays null; causal-location and repair-family
-agreement are development surrogates only.
-
-Examples:
+`dev/synthetic_cases/` holds 16 small cases, each a different failure shape (compiler flags, inline
+assembly, intrinsics, atomic linkage, pointer width, endianness, packaging conditions, generated
+configuration, an unfamiliar target architecture, and so on). `evaluate.py` copies each into a
+temporary workspace, runs the Agent, and records whether it edited the expected file and chose the
+expected repair family. `verified_build_success` is always null.
 
 ```text
 python dev/evaluate.py --configuration A --case unconditional_x86_sse_flag --output dev/pilot.jsonl
 python dev/evaluate.py --configuration K --output dev/full-synthetic.csv
 python dev/evaluate.py --configuration K --case unconditional_x86_sse_flag --trace-dir dev/traces
-python dev/evaluate.py --configuration C --case unconditional_x86_sse_flag --artifact-dir runs/model-artifacts
-python dev/trace_viewer.py dev/traces/unconditional-x86-sse-flag-K.jsonl --output dev/trace.html
+python dev/evaluate.py --configuration C --case unconditional_x86_sse_flag --artifact-dir <artifact-dir>
+python dev/trace_viewer.py dev/traces/unconditional_x86_sse_flag-K.jsonl --output dev/trace.html
 ```
 
-Configurations B and D require a running local OpenAI-compatible endpoint. Configurations C and E
-require an explicitly configured remote endpoint/model and force the STRONG tier; run them only as
-cost-controlled pilots. A and K remain usable without a provider, and K accepts caller-selected
-provider settings. Use `ARCHIMEDES_CONTEXT_MODE=raw_context` with K for the capped raw-vs-selected
-context experiment.
+The configurations live in `configurations.json`:
 
-Use `--artifact-dir` for small model pilots when the actual guarded worktree and diagnostics must be
-inspected. Artifacts are stored under ignored `runs/` paths by convention and are never bundled.
-Slow local models can use `--case-timeout-seconds 240`; the agent's individual request timeout
-remains independently bounded by `ARCHIMEDES_MODEL_TIMEOUT_SECONDS`.
+| Config | Setup |
+|---|---|
+| A | Deterministic repair rules only, no model. |
+| B, C | A local (B) or remote STRONG-tier (C) model with minimal context and no rules. |
+| D, E | Full Archimedes with a local (D) or remote STRONG-tier (E) model. |
+| F to J | Full Archimedes with one feature turned off: claim confidence, Semantic Anchors, Architecture Discovery, active probes, Failure Frontier. |
+| K | Full Archimedes with whatever model backend the environment selects (default). |
 
-Every agent run writes a bounded `output/execution-trace.jsonl` by default. The trace records the
-controller stages, evidence counts, hypothesis/probe decisions, candidate review, build requests,
-model usage metadata, and final outcome. It deliberately excludes raw source, raw logs, prompts,
-model responses, and credentials. Set `ARCHIMEDES_ENABLE_LOCAL_TRACE=false` to disable it or
-`ARCHIMEDES_TRACE_MAX_EVENTS` to lower its event cap. `trace_viewer.py` is a standard-library,
-development-only renderer; its HTML and copied traces are ignored by Git.
+A and K run without a model provider. B and D need a local OpenAI-compatible endpoint on a
+loopback address. C and E need an explicitly configured remote endpoint and model; set the
+per-million token rates and `ARCHIMEDES_MAX_ESTIMATED_COST_USD`, and keep them to small pilots.
+Set `ARCHIMEDES_CONTEXT_MODE=raw_context` with K to compare raw context against selected context.
 
-For local-model levels, set the loopback base URL and model identifiers in ordinary environment
-variables. For remote pilot experiments, configure rates and a maximum estimated cost explicitly.
-Do not put credentials into the case corpus, output table, submitted Agent directory, or Git.
+When comparing configurations, keep the case list, seed, model, budgets and time limits fixed and
+change one thing at a time. `--case-timeout-seconds 240` helps slow local models; each model
+request is still limited separately by `ARCHIMEDES_MODEL_TIMEOUT_SECONDS`. `--artifact-dir` keeps
+each workspace for inspection.
+
+Never put credentials in the cases, result tables, the Agent folder or Git.
+
+## Execution traces
+
+Every Agent run writes `output/execution-trace.jsonl`. It records controller stages, evidence
+counts, hypothesis and probe decisions, candidate review, build requests, model usage metadata and
+the final outcome. It leaves out source code, raw logs, prompts, model responses and credentials.
+Set `ARCHIMEDES_ENABLE_LOCAL_TRACE=false` to turn it off or `ARCHIMEDES_TRACE_MAX_EVENTS` to lower
+its event limit. Generated `.jsonl`, `.csv` and `.html` files under `dev/` are ignored by Git.
+
+## Replaying the Development Cases
+
+`replay_development_cases.py` builds each Case's workspace, unpacks the Debian source with
+`dpkg-source -x`, runs the Agent and writes `replay-summary.json`. On Windows it calls
+`dpkg-source` through the `Ubuntu` WSL distribution, using `dpkg-dev` and `libdpkg-perl` (and, for
+`.bz2` sources, `bzip2` and `libbz2-1.0`) extracted without installation into a local folder
+that you pass as `--dpkg-source-root`.
+
+```text
+python dev/replay_development_cases.py \
+  --dataset-root <dataset-dir>/buildbench-development-cases-v0.1 \
+  --output-root <replay-output-dir> \
+  --dpkg-source-root <extracted-dpkg-dev-root> \
+  --python C:\path\to\python3.11.exe \
+  --jobs 6 \
+  --case CASE_ID
+```
+
+Omit `--case` to replay all 200 Cases. The output folder must not exist yet. The exit code is 0
+only if every Case reports `completed`. A replay shows what the Agent changed, not whether the
+package builds. To run natively on Linux instead, see section 5.4 of `docs/CODEBASE_GUIDE.md`.
+
+## Worktree Bundles
+
+```text
+python dev/package_worktree_bundle.py \
+  --replay-root <replay-output-dir> \
+  --output <bundle-name>.zip
+```
+
+The bundle has a root `manifest.json` (schema `0.1`, suite `development-recommended-v1`) and each
+Case's full source tree under `cases/<case-id>/worktree/input/`. Its bytes are reproducible. The
+packager stops on incomplete Cases, duplicate Case IDs, symlinks and non-regular files, and leaves
+out version-control and quilt folders (`.git*`, `.hg`, `.svn`, `.pc` and similar), which the
+service rejects. A Worktree Bundle is not the Agent submission ZIP; never mix them up.
+
+## Submission preflight
+
+```text
+python dev/submission_preflight.py --hosted-smoke-sha256 SHA --final-confirmed-sha256 SHA
+```
+
+This rebuilds the ZIP from `agents/archimedes` with the Starter Kit's `runner/` code and compares
+it with the packaged ZIP given by `--archive`. It also checks Git state, Docker images, the latest
+local `bb ready` result and, when `ARCHIMEDES_MODEL_BACKEND` is set, the model settings. Hosted steps
+cannot be checked locally, so you pass the SHA-256 of the ZIP that passed the Hosted Smoke Test and
+was confirmed final, plus `--team-registered` and `--submission-access-confirmed`. Add `--json` for
+the full report. The current confirmed release is documented in `SUBMISSION.md`.

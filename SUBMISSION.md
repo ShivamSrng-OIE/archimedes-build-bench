@@ -21,7 +21,7 @@ confirmation UI for this release.
 
 ```text
 Agent version:       0.2.20 (CONFIRMED final)
-Archive:             dist/agent-submission.zip
+Archive:             agent-submission.zip (built by bb ready)
 Archive bytes:       107,176
 SHA-256:             2cb11d01605bf25ea9a1dd82c0d3c5acc8f5057c5d08c48bb32d2990e006764b
 Source commit:       eede689
@@ -31,8 +31,7 @@ Local Python tests:  200 passed (python:3.11.9-slim-bookworm); 200 passed,
                      2 skipped on Windows Python 3.14
 Strict mypy:         no issues in 75 source files
 Official bb ready:   succeeded, hello 1/1 incl. final validation, same SHA-256
-                     (run 20261105T144127Z-46617); evidence in
-                     runs/ready/20261105T144127Z-v0220/
+                     (run 20261105T144127Z-46617)
 New in 0.2.20:       architecture-aware Debian symbols repair (dpkg-gensymbols
                      "symbols disappeared"): tags exactly the reported symbols
                      arch=!<target>; fails closed otherwise
@@ -84,8 +83,7 @@ which is mounted `nodev`. With the unmodified rc.5 kit extracted under the WSL
 ext4 home directory, the official `./bb ready --agent ./agents/archimedes --json`
 exited 0 with `"status": "succeeded"`: `hello` reproduced its initial failure, the
 Agent completed, the canonical patch was generated, and final validation
-succeeded (1/1). The ready artifact's SHA-256 equals the `dist/` archive above.
-Evidence is retained under `runs/ready/20261105T004659Z-v0215/`.
+succeeded (1/1), and the ready artifact's SHA-256 matched the archive above.
 
 The exact Agent was also replayed in `python:3.11.9-slim-bookworm` with a
 simulated hosted endpoint. It sent one `/v1/chat/completions` request containing
@@ -106,7 +104,7 @@ Portal status:   Qualified; Final version selected
 Hosted Smoke:    hello passed 1/1, including clean-patch final validation
 Selected:        4 October 2026 at 10:57 AM EDT
 Source commit:   66dc216
-Archive:         dist/agent-submission-v0.2.14-ready.zip
+Archive:         agent-submission-v0.2.14-ready.zip
 Archive bytes:   100,092
 SHA-256:         714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
 ```
@@ -131,7 +129,7 @@ Starter Kit:     0.1.0-rc.3
 Official ready:  succeeded
 Ready run ID:    20261003T193000Z-v0214-final
 Source commit:   66dc216
-Archive:         dist/agent-submission-v0.2.14-ready.zip
+Archive:         agent-submission-v0.2.14-ready.zip
 Archive bytes:   100,092
 SHA-256:         714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
 Example Case:    hello passed initial reproduction, Agent, patch, and final build
@@ -154,14 +152,8 @@ Bundle is also byte-for-byte identical to the validated v0.2.11 bundle. These ar
 checks but do not replace the organizer's Hosted Smoke qualification or public target-build evidence.
 
 The portal records digest prefix `714bec9725b9...`, passed static checks, and a successful Hosted
-Smoke Test with final validation. The displayed terminal log was transcribed to
-`runs/submission-20261003T193341Z-1c80de94/PORTAL_EVIDENCE.md` with SHA-256
-`f988aa35d1401db25bd35f752677798f8895909cea580e63d51b0cfb4fc9bce8`; it is clearly labeled as a
-transcription because the download control did not yield a local file. After an explicit action-time
-confirmation, v0.2.14 replaced v0.2.11 as the selected final on 4 October 2026 at 10:57 AM EDT.
-The final portal state is transcribed separately in
-`runs/submission-20261003T193341Z-1c80de94/FINAL_SELECTION.md`, SHA-256
-`3c41ee48ca2df23c0f1b6fea1089bb4b1803c8fccff02344b0b6debde5965a05`.
+Smoke Test with final validation. After an explicit action-time confirmation, v0.2.14 replaced
+v0.2.11 as the selected final on 4 October 2026 at 10:57 AM EDT.
 
 An independent audit of the exact ZIP found 81 unique members, only `agent.yaml`,
 `requirements.lock`, `README.md`, and `src/` at the root, deterministic timestamps, regular deflated

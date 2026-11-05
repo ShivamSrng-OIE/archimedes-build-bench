@@ -24,7 +24,7 @@ workflow completed under rc.3, including the `hello` Example Case and clean-patc
 produced:
 
 ```text
-Archive: dist/agent-submission-v0.2.14-ready.zip
+Archive: agent-submission-v0.2.14-ready.zip
 Bytes:   100,092
 SHA-256: 714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
 Run ID:  20261003T193000Z-v0214-final
