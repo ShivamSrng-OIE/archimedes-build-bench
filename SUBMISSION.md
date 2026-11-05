@@ -47,6 +47,11 @@ Hosted failure mode: model HTTP errors keep the validated deterministic repair
 Agent-image replay:  genuine OBS log with build-root noise repaired in mock,
                      simulated hosted (1 compliant request, token not leaked)
                      and hosted-endpoint-down modes
+Output-token limit:  max_completion_tokens=8192; no value is published on the
+                     submission, rules or FAQ pages (guide link returns 404,
+                     checked 4 Nov 2026), but the 0.2.15 Hosted Smoke made a
+                     successful official call with this exact request (portal
+                     "Model access: Passed"; trace model_critique_completed)
 Hosted Smoke:        pending
 New submission ID:   pending
 Final confirmation:  pending
