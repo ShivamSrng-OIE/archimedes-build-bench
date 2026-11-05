@@ -23,7 +23,3 @@ def normalize_architecture(raw: str) -> ArchitectureIdentity:
     cleaned = re.sub(r"\s+", "", raw.strip().lower()).replace("_unknown", "")
     canonical = _ALIASES.get(cleaned, Architecture.UNKNOWN)
     return ArchitectureIdentity(canonical=canonical, raw=raw, aliases_observed=[cleaned])
-
-
-def aliases_for(architecture: Architecture) -> tuple[str, ...]:
-    return tuple(sorted(alias for alias, canonical in _ALIASES.items() if canonical is architecture))

@@ -12,7 +12,7 @@ from src.config import FeatureFlags
 from src.errors import ModelError
 from src.forensics.log_parser import analyze_build_log
 from src.models.base import ModelTask
-from src.models.mock import MockModelClient
+from .mock_model import MockModelClient
 from src.models.router import ModelRouter
 from src.reasoning.controller import RepairController
 from src.schemas import FailureFrontier, FrontierStage

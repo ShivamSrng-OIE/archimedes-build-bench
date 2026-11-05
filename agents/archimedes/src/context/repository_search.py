@@ -90,12 +90,3 @@ def search_regex(
                 if len(results) >= max_results:
                     break
     return results
-
-
-def find_exact_text(repo: Path, text: str, *, max_results: int = 50) -> list[SearchSnippet]:
-    return search_regex(repo, re.escape(text), reason=f"exact text: {text}", max_results=max_results)
-
-
-def find_portable_fallbacks(repo: Path, *, max_results: int = 50) -> list[SearchSnippet]:
-    terms = r"(?<![A-Za-z0-9])(?:generic|portable|fallback|scalar|reference|software|no[_-]?simd)(?![A-Za-z0-9])"
-    return search_regex(repo, terms, reason="portable fallback", max_results=max_results)

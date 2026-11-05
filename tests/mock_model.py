@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
-from ..errors import ModelError
-from ..schemas import JSONValue
-from .base import ModelCallRecord, ModelResponse, ModelTask, ModelTier
-from .json_protocol import parse_model_json
+from src.errors import ModelError
+from src.schemas import JSONValue
+from src.models.base import ModelCallRecord, ModelResponse, ModelTask, ModelTier
+from src.models.json_protocol import parse_model_json
 
 
 class MockModelClient:

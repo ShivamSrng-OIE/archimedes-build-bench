@@ -16,7 +16,7 @@ from src.context.token_budget import UsageBudget
 from src.errors import ConfigurationError, ModelProtocolError
 from src.main import run
 from src.models.base import ModelTask
-from src.models.mock import MockModelClient
+from .mock_model import MockModelClient
 from src.models.openai_compatible import OpenAICompatibleModelClient
 from src.models.router import ModelRouter
 from src.reasoning.controller import RepairController

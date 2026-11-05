@@ -5,7 +5,6 @@ import unittest
 from src.evidence.confidence import claim_justifies_patch, fuse_confidence
 from src.evidence.ledger import EvidenceLedger
 from src.reasoning.hypotheses import generate_initial_hypotheses
-from src.reasoning.probe_planner import information_value, rank_probes
 from src.schemas import (
     ClaimStatus,
     ConsequenceLevel,
@@ -15,7 +14,6 @@ from src.schemas import (
     FailureFamily,
     FailureFrontier,
     FrontierStage,
-    Probe,
 )
 
 
@@ -61,20 +59,6 @@ class EvidenceReasoningTests(unittest.TestCase):
         self.assertEqual(len(hypotheses.hypotheses), 3)
         self.assertEqual(round(sum(item.posterior_score for item in hypotheses.hypotheses), 6), 1.0)
 
-    def test_probe_information_value_and_ranking(self) -> None:
-        cheap_value = information_value(
-            hypothesis_mass=0.8, discrimination_strength=0.9,
-            consequence=ConsequenceLevel.HIGH, normalized_cost=0.2,
-        )
-        expensive_value = information_value(
-            hypothesis_mass=0.8, discrimination_strength=0.9,
-            consequence=ConsequenceLevel.HIGH, normalized_cost=1.0,
-        )
-        probes = [
-            Probe("probe-002", "compile_only", "expensive", estimated_information_gain=expensive_value, estimated_cost=1.0),
-            Probe("probe-001", "repository_search", "cheap", estimated_information_gain=cheap_value, estimated_cost=0.2),
-        ]
-        self.assertEqual(rank_probes(probes)[0].id, "probe-001")
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .support import AGENT, make_workspace
+from .support import make_workspace
 
 from src.build.feedback import BuildBudget
 from src.build.unavailable import UnavailableBuildFeedbackProvider
@@ -19,7 +19,6 @@ from src.errors import (
     WorkspaceError,
 )
 from src.repair.executor import apply_candidate, rollback_transaction
-from src.repair.patterns import load_rules
 from src.repair.policy_critic import passes_policy_critic
 from src.schemas import FrontierStage, PatchCandidate, PlannedEdit, RepairFamily
 from src.workspace.path_policy import PathPolicy
@@ -212,11 +211,6 @@ class WorkspaceRepairTests(unittest.TestCase):
                 )
             )
             self.assertFalse(passes_policy_critic(bad, PathPolicy(repo)))
-
-    def test_generic_rulebook_loads(self) -> None:
-        rules = load_rules(AGENT / "src" / "knowledge" / "portability_rules.json")
-        self.assertGreaterEqual(len(rules), 5)
-        self.assertNotIn("package", rules[0].id)
 
     def test_unavailable_build_feedback_fails_closed(self) -> None:
         provider = UnavailableBuildFeedbackProvider()

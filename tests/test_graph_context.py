@@ -5,9 +5,8 @@ import unittest
 from pathlib import Path
 
 from src.architecture.hazard_scanner import ArchitectureHazard
-from src.context.repository_search import find_portable_fallbacks, inventory_repository
+from src.context.repository_search import inventory_repository
 from src.graph.builder import build_delta_graph
-from src.graph.query import neighbors
 from src.schemas import (
     Architecture,
     ArchitectureIdentity,
@@ -20,7 +19,7 @@ from src.schemas import (
 
 
 class GraphContextTests(unittest.TestCase):
-    def test_inventory_and_portable_fallback_search(self) -> None:
+    def test_inventory_finds_build_files(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
             (repo / "src").mkdir()
@@ -28,7 +27,6 @@ class GraphContextTests(unittest.TestCase):
             (repo / "Makefile").write_text("all:\n\t@true\n", encoding="utf-8")
             inventory = inventory_repository(repo)
             self.assertIn("Makefile", inventory.build_files)
-            self.assertEqual(find_portable_fallbacks(repo)[0].path, "src/generic.c")
 
     def test_debian_rules_are_build_and_packaging_context(self) -> None:
         with tempfile.TemporaryDirectory() as name:
@@ -57,7 +55,8 @@ class GraphContextTests(unittest.TestCase):
         )
         hazard = ArchitectureHazard("Makefile", 2, "compiler_flag", "-msse4.2", "CFLAGS += -msse4.2", 0.9)
         graph = build_delta_graph(case, failure, [hazard])
-        self.assertIn("hazard-001", neighbors(graph, "failure-001"))
+        targets = [edge.target for edge in graph.adjacency.get("failure-001", [])]
+        self.assertIn("hazard-001", targets)
 
 
 if __name__ == "__main__":

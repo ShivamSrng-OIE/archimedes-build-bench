@@ -14,7 +14,7 @@ from src.errors import BudgetExhaustedError, ModelProtocolError
 from src.logging_utils import redact_secrets
 from src.models.base import ModelTask, ModelTier
 from src.models.json_protocol import parse_model_json
-from src.models.mock import MockModelClient
+from .mock_model import MockModelClient
 from src.models.openai_compatible import OpenAICompatibleModelClient
 from src.models.openai_compatible import _NoRedirectHandler
 from src.models.prompts import system_prompt

@@ -1,17 +1,11 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
-from src.architecture.probes import execute_probe
 from src.config import ModelBackend, RuntimeConfig
-from src.errors import ConfigurationError, ProbeError
-from src.schemas import Probe
-from src.workspace.capabilities import CapabilityRegistry
+from src.errors import ConfigurationError
 
 
 class RuntimeHardeningTests(unittest.TestCase):
@@ -100,51 +94,6 @@ class RuntimeHardeningTests(unittest.TestCase):
             ):
                 RuntimeConfig.from_environment()
 
-    def test_probe_uses_discovered_executable_not_untrusted_supplied_path(self) -> None:
-        with tempfile.TemporaryDirectory() as name:
-            repo = Path(name)
-            probe = Probe(
-                id="probe-1",
-                probe_type="make_dry_run",
-                description="bounded dry run",
-                command=["/untrusted/make", "-n"],
-            )
-            capabilities = CapabilityRegistry({"make": "/trusted/bin/make"})
-            completed = subprocess.CompletedProcess([], 0, "ok", "")
-            with patch(
-                "src.architecture.probes.subprocess.run", return_value=completed
-            ) as run:
-                result = execute_probe(probe, capabilities=capabilities, repo_root=repo)
-        self.assertEqual(result.stdout, "ok")
-        self.assertEqual(run.call_args.args[0], ["/trusted/bin/make", "-n"])
-
-    def test_probe_rejects_missing_working_directory_and_nonpositive_timeout(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as name:
-            repo = Path(name)
-            capabilities = CapabilityRegistry({"make": "/trusted/bin/make"})
-            missing = Probe(
-                id="probe-missing",
-                probe_type="make_dry_run",
-                description="missing working directory",
-                command=["make", "-n"],
-                working_directory="missing",
-            )
-            with self.assertRaises(ProbeError):
-                execute_probe(missing, capabilities=capabilities, repo_root=repo)
-
-            invalid_timeout = Probe(
-                id="probe-timeout",
-                probe_type="make_dry_run",
-                description="invalid timeout",
-                command=["make", "-n"],
-                timeout_seconds=0,
-            )
-            with self.assertRaises(ProbeError):
-                execute_probe(
-                    invalid_timeout, capabilities=capabilities, repo_root=repo
-                )
 
 
 if __name__ == "__main__":

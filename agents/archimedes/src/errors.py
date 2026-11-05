@@ -29,10 +29,6 @@ class ModelProtocolError(ModelError):
     """A model response did not satisfy the structured JSON contract."""
 
 
-class ProbeError(ArchimedesError):
-    """A predefined diagnostic probe could not be executed safely."""
-
-
 class PatchValidationError(ArchimedesError):
     """A structured edit failed a deterministic guard."""
 
