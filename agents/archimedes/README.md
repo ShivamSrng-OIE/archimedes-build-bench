@@ -129,6 +129,14 @@ found:` are chosen instead of the final host/time line, classifies rpm
 redacted HTTP status when a hosted critique call fails while the validated
 deterministic repair is kept.
 
+Version 0.2.18 stops OBS host noise from lending a failure family through the
+log context, matches anchored patterns on lines collapsed as `[repeated N
+times]`, recognizes direct `nothing provides X` dependencies, versioned and
+`but X is to be installed` sbuild dependency lines, rpm spec and BUILDROOT
+directory errors (also in plain rpmbuild logs), modern meson test names, and
+compiler OOM kills, ignores Python logging records in test output, and traces
+fatal hosted model failures before exiting nonzero.
+
 ## System architecture
 
 The runtime is separated into small typed packages:

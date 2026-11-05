@@ -867,6 +867,12 @@ class RepairController:
                 candidate = self._consult_model_if_configured(case, failure, ledger)
             except (ModelError, BudgetExhaustedError) as exc:
                 if self.config.model_backend is ModelBackend.HOSTED_OPENAI_COMPATIBLE:
+                    self._trace(
+                        ControllerStage.REPAIR.value,
+                        "model_unavailable_fatal",
+                        error_type=type(exc).__name__,
+                        detail=str(exc)[:300],
+                    )
                     raise
                 self._trace(
                     ControllerStage.REPAIR.value,

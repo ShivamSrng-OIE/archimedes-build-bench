@@ -222,6 +222,81 @@ class HostedObsLogTests(unittest.TestCase):
         self.assertIn("libfoo-dev:arm64 but it is not installable", analysis.primary_diagnostic)
         self.assertEqual(analysis.family.value, "dependency")
 
+    def test_host_noise_does_not_lend_a_family(self) -> None:
+        for body in (
+            "[  95s] now finalizing build dir...\n",
+            "[ 127s] ----- building foo.spec (user abuild)\n[ 300s] something unusual happened\n",
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(analyze_build_log(HOSTED_SETUP_NOISE + body).family.value, "unknown")
+
+    def test_repeated_lines_still_match_anchored_patterns(self) -> None:
+        noise = (
+            "[   18s] ERROR: not all operations were successful.\n"
+            "[   19s] ERROR: not all operations were successful.\n"
+            "[   20s] now finalizing build dir...\n"
+            "[   21s] post-build-checks: something odd\n"
+        )
+        self.assertEqual(analyze_build_log(noise).primary_diagnostic, "post-build-checks: something odd")
+        shell = (
+            "[ 127s] ----- building foo.spec (user abuild)\n"
+            "[ 140s] /var/tmp/rpm-tmp.X: line 40: ./autogen.sh: No such file or directory\n"
+            "[ 140s] /var/tmp/rpm-tmp.X: line 40: ./autogen.sh: No such file or directory\n"
+            "[ 141s] error: Bad exit status from /var/tmp/rpm-tmp.X (%build)\n"
+        )
+        self.assertIn("autogen.sh: No such file", analyze_build_log(shell).primary_diagnostic)
+
+    def test_direct_build_requires_without_needed_by(self) -> None:
+        log = (
+            "[ 3s] expansion error\n[ 3s]   nothing provides libfoo-devel\n"
+            "[ 3s] build: cleanup\n"
+            '[build-case] [event] {"event":"stage","stage":"package_build","state":"failed"}\n'
+        )
+        analysis = analyze_build_log(log)
+        self.assertIn("nothing provides libfoo-devel", analysis.primary_diagnostic)
+        self.assertEqual(analysis.family.value, "dependency")
+
+    def test_rpm_spec_and_directory_errors_are_packaging(self) -> None:
+        for message in (
+            "line 25: Unknown tag: Foo: bar",
+            "Directory not found: /home/abuild/rpmbuild/BUILDROOT/f/usr/share/foo",
+        ):
+            with self.subTest(message=message):
+                log = (
+                    "[ 127s] ----- building foo.spec (user abuild)\n"
+                    "[ 150s] ERROR:root:optional backend not available\n"
+                    f"[ 200s] error: {message}\n"
+                )
+                analysis = analyze_build_log(log)
+                self.assertEqual(analysis.primary_diagnostic, f"error: {message}")
+                self.assertEqual(analysis.family.value, "packaging")
+
+    def test_debian_dependency_forms_and_modern_meson(self) -> None:
+        for line in (
+            " sbuild-build-depends-main-dummy:arm64 : Depends: libfoo-dev:arm64 (>= 1.2.3) but it is not going to be installed",
+            " sbuild-build-depends-main-dummy:arm64 : Depends: libbar-dev but 1.0-1 is to be installed",
+        ):
+            with self.subTest(line=line):
+                log = f"{line}\nE: Unable to correct problems.\nNot removing build depends: as requested\n"
+                analysis = analyze_build_log(log)
+                self.assertIn("Depends: lib", analysis.primary_diagnostic)
+                self.assertEqual(analysis.family.value, "dependency")
+        meson = (
+            "[ 127s] ----- building glib2.spec (user abuild)\n"
+            "[ 300s]  3/36 glib:glib+core / array            FAIL            0.21s   exit status 1\n"
+            "[ 300s] Fail:               1\n"
+        )
+        analysis = analyze_build_log(meson)
+        self.assertIn("glib+core / array", analysis.primary_diagnostic)
+        self.assertEqual(analysis.family.value, "test")
+
+    def test_compiler_oom_kill_is_environment(self) -> None:
+        log = (
+            "[ 127s] ----- building foo.spec (user abuild)\n"
+            "[ 300s] g++: fatal error: Killed signal terminated program cc1plus\n"
+        )
+        self.assertEqual(analyze_build_log(log).family.value, "environment")
+
     def test_hosted_hello_log_is_repaired(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
