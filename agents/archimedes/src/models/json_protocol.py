@@ -115,6 +115,16 @@ def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
             raise ModelProtocolError(
                 "failure analysis recommended_files must be repository-relative strings"
             )
+    if task is ModelTask.PATCH_CRITIQUE:
+        findings = value.get("findings")
+        if type(value.get("accepted")) is not bool or (
+            not isinstance(findings, list)
+            or len(findings) > _MAX_ANALYSIS_ITEMS
+            or not all(isinstance(item, str) for item in findings)
+        ):
+            raise ModelProtocolError(
+                "patch critique requires accepted boolean and bounded string findings"
+            )
     if task is ModelTask.PATCH_PLANNING:
         edits = value.get("edits")
         assumptions = value.get("assumptions")

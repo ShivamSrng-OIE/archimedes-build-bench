@@ -14,7 +14,7 @@ from ..architecture.hazard_scanner import ArchitectureHazard, scan_architecture_
 from ..architecture.profile import construct_profile
 from ..architecture.semantic_anchor import extract_anchor, validate_anchor
 from ..build.feedback import BuildBudget, BuildFeedbackProvider, BuildFeedbackResult
-from ..config import ContextMode, RuntimeConfig
+from ..config import ContextMode, ModelBackend, RuntimeConfig
 from ..constants import MAX_TEXT_FILE_BYTES, PROTOCOL_VERSION, RELIABILITY
 from ..context.repository_search import (
     SearchSnippet,
@@ -792,10 +792,80 @@ class RepairController:
                 )
                 if candidate is not None and candidate.repair_family in excluded:
                     candidate = None
+        if (
+            candidate is not None
+            and self.model_router is not None
+            and self.config.model_backend is ModelBackend.HOSTED_OPENAI_COMPATIBLE
+        ):
+            from ..schemas import CaseData, FailureAnalysis
+
+            assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
+            try:
+                critique = self.model_router.complete(
+                    task=ModelTask.PATCH_CRITIQUE,
+                    system_prompt=system_prompt(ModelTask.PATCH_CRITIQUE),
+                    user_prompt=(
+                        f"source_architecture={case.source_architecture.raw}\n"
+                        f"target_architecture={case.target_architecture.raw}\n"
+                        f"first_diagnostic={failure.primary_diagnostic}\n"
+                        f"repair_family={candidate.repair_family.value}\n"
+                        f"rationale={candidate.rationale}\n"
+                        + "\n".join(
+                            f"path={edit.path}\nexpected_text={edit.expected_text}\n"
+                            f"replacement={edit.replacement}"
+                            for edit in candidate.planned_edits
+                        )
+                    ),
+                )
+            except (ModelError, BudgetExhaustedError) as exc:
+                # A transient hosted-model failure must not discard an already
+                # validated deterministic repair; keep it and make no new calls.
+                self._trace(
+                    ControllerStage.REPAIR.value,
+                    "model_critique_unavailable",
+                    error_type=type(exc).__name__,
+                )
+                critique = None
+            if critique is not None:
+                critique_findings = critique.data["findings"]
+                assert isinstance(critique_findings, list)
+                self._trace(
+                    ControllerStage.REPAIR.value,
+                    "model_critique_completed",
+                    accepted=critique.data["accepted"],
+                    finding_count=len(critique_findings),
+                )
+                if not critique.data["accepted"]:
+                    deterministic = candidate
+                    alternative = None
+                    try:
+                        alternative = self._consult_model_if_configured(
+                            case, failure, ledger
+                        )
+                    except (ModelError, BudgetExhaustedError) as exc:
+                        self._trace(
+                            ControllerStage.REPAIR.value,
+                            "model_unavailable",
+                            error_type=type(exc).__name__,
+                        )
+                    if alternative is not None and alternative.repair_family not in excluded:
+                        candidate = alternative
+                    else:
+                        # No usable model alternative: the deterministic rule
+                        # candidate remains the best-supported repair.
+                        candidate = deterministic
+                        self._trace(
+                            ControllerStage.REPAIR.value,
+                            "model_critique_rejection_overridden",
+                            candidate_id=deterministic.id,
+                            reason="no admissible model alternative",
+                        )
         if candidate is None and self.model_router is not None:
             try:
                 candidate = self._consult_model_if_configured(case, failure, ledger)
             except (ModelError, BudgetExhaustedError) as exc:
+                if self.config.model_backend is ModelBackend.HOSTED_OPENAI_COMPATIBLE:
+                    raise
                 self._trace(
                     ControllerStage.REPAIR.value,
                     "model_unavailable",

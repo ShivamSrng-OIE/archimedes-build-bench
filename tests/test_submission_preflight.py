@@ -7,11 +7,11 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from dev.submission_preflight import (
-    Check,
     _archive_fresh,
     _digest_attestation,
     _latest_ready_result,
     _model_checks,
+    _readiness_gates,
 )
 from runner.agent_submission import create_deterministic_zip
 from src.constants import AGENT_VERSION
@@ -24,20 +24,23 @@ class SubmissionPreflightTests(unittest.TestCase):
         manifest = (AGENT / "agent.yaml").read_text(encoding="utf-8")
         self.assertIn(f'version: "{AGENT_VERSION}"', manifest)
 
-    def test_manual_model_access_gate_is_distinct_from_model_configuration(self) -> None:
-        configured = _model_checks({
-            "ARCHIMEDES_MODEL_BACKEND": "local_openai_compatible",
-            "ARCHIMEDES_MODEL_BASE_URL": "http://127.0.0.1:11434/v1",
-            "ARCHIMEDES_FAST_MODEL": "fast-v1",
-            "ARCHIMEDES_STRONG_MODEL": "strong-v1",
-        })
-        access = Check(
-            "competition_model_access",
-            False,
-            "organizer-compatible model delivery has not been confirmed",
-        )
-        self.assertTrue(all(item.passed for item in configured))
-        self.assertFalse(access.passed)
+    def test_local_package_is_separate_from_hosted_and_final_gates(self) -> None:
+        observed = {
+            "submission_structure": True,
+            "archive_matches_source": True,
+            "team_registration": True,
+            "submission_access": True,
+            "hosted_smoke": False,
+            "final_confirmation": False,
+        }
+        gates = _readiness_gates(observed)
+        self.assertTrue(gates["local_submission_ready"])
+        self.assertTrue(gates["upload_ready"])
+        self.assertFalse(gates["full_evaluation_ready"])
+        observed["hosted_smoke"] = True
+        self.assertFalse(_readiness_gates(observed)["full_evaluation_ready"])
+        observed["final_confirmation"] = True
+        self.assertTrue(_readiness_gates(observed)["full_evaluation_ready"])
 
     def test_mock_default_is_not_competition_model_configuration(self) -> None:
         checks = {item.name: item.passed for item in _model_checks({})}

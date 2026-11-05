@@ -1,6 +1,69 @@
 # Archimedes release, submission, and evaluation record
 
-Last checked: **4 October 2026 EDT**
+Last checked: **4 November 2026 EDT**
+
+## Current v0.2.15 preparation
+
+The [current participation guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)
+now specifies organizer-injected `BB_MODEL_BASE_URL`, `BB_MODEL_NAME`, and
+`BB_MODEL_TOKEN_FILE`. Hosted Smoke requires both a completed official model call
+and independent repair validation. An older Smoke pass must be rerun, and an
+earlier final selection must be explicitly reconfirmed. Final confirmation
+cannot be changed. The deadline is the end of **13 November 2026, Beijing time**.
+The [download page](https://matrix.cstcloud.cn/build-bench/data-downloads.html?lang=en)
+publishes Starter Kit `0.1.0-rc.5`; its release notes correct generated patches
+for added and deleted text files.
+The current [rules](https://matrix.cstcloud.cn/build-bench/rules.html) and
+[My Submissions](https://matrix.cstcloud.cn/build-bench/my-submissions.html)
+pages agree that confirmation is irreversible. Some FAQ text still describes
+changing a selection before the deadline; follow the current rules and
+confirmation UI for this release.
+
+```text
+Agent version:       0.2.15
+Archive:             dist/agent-submission.zip
+Archive bytes:       102,003
+SHA-256:             5278102b2e6e2a48170169373d27a5b01c2cffd4bda592c64f319c6d63fbcacd
+Starter Kit:         0.1.0-rc.5, official ZIP SHA-256 1bd384af...dcfb56 verified
+Static check:        passed (81 files, 290,444 bytes)
+Model example check: passed (11 synthetic tests, no official model call)
+Local Python tests:  157 passed, 2 skipped, 59 subtests passed (Python 3.11.15)
+Strict mypy:         no issues in 75 source files
+Archive audit:       4 permitted roots, 81 members identical to source, no
+                     caches, secrets, symlinks, traversal; CRC test passed
+Agent-image replay:  hello repaired (mock; simulated hosted; hosted endpoint down)
+Local ready:         Validator setup fails on Docker Desktop (/dev/null denied)
+Hosted Smoke:        pending
+New submission ID:   pending
+Final reconfirmation: pending
+```
+
+### 4 November 2026 recheck
+
+The website still publishes Starter Kit `0.1.0-rc.5` (documentation revision
+`2026-10-20-patch-modes`) and the 13 November 2026 (UTC+8) confirmation deadline.
+The site's direct model-access guide link returns 404, but the identical guide ships
+in the kit as `model-access/guide.en.md` (v0.1, 15 October 2026). The website
+publishes no per-request token, request-count, or timeout limits beyond that guide.
+
+v0.2.15 changed after the 21 October package: a hosted-model error during the
+critique of a deterministic repair no longer aborts the run, and a critique
+rejection falls back to the deterministic candidate when the model offers no
+admissible alternative. Both paths have unit tests.
+
+`bb doctor` now passes and Docker reproduces the initial failure stage, but the
+Validator's nested OBS chroot still cannot open `/dev/null`. The resulting log
+therefore does not contain the intentional `hello` error, and the Agent correctly
+declines to edit. The official runner was not modified. Instead, the exact Agent
+was replayed in `python:3.11.9-slim-bookworm` with the official hardening flags,
+the real Case worktree, and a failure tail matching the spec's `%build` abort.
+It removed exactly the two intentional lines. In hosted mode it sent one
+`/v1/chat/completions` request containing only `model`, `messages`, `store: false`,
+and `max_completion_tokens`, with the bearer token read from the injected file.
+The token never appeared in logs or output. This is replay evidence, not organizer
+validation; Hosted Smoke remains the qualification gate.
+
+## Historical v0.2.14 selection (requires new validation)
 
 ## Selected organizer-qualified final
 
@@ -77,7 +140,7 @@ bytes and exactly matches the committed Agent source.
 
 ## Package contract
 
-Only upload the exact `bb ready` artifact. Its ZIP root must contain:
+Upload only a checked archive from the current Starter Kit. Its ZIP root must contain:
 
 ```text
 agent.yaml
@@ -102,8 +165,8 @@ or remote OpenAI-compatible providers, but its safe credential-free development 
 The deterministic `hello` Case and deterministic public repair paths do not prove that a real model
 will be available in Full Evaluation.
 
-The current participant pages still do not publish the organizer's model endpoint, model IDs,
-credential injection, network policy, or released build-feedback interface. v0.2.14 can use
+At the time of v0.2.14, participant pages did not publish the organizer's model endpoint, model IDs,
+credential injection, network policy, or released build-feedback interface. v0.2.14 could use
 `bb-build` only when the actual runtime provides both the executable and the exact protocol-0.1 Case
 declaration; it never infers gateway sockets, tokens, or Validator configuration. Never put a secret
 into the ZIP. Before Full Evaluation, retain the exact organizer-approved provider/model identifiers,
@@ -112,32 +175,35 @@ and nondeterminism settings.
 
 ## Pre-upload procedure
 
-From the Starter Kit root in the supported Linux/Docker environment:
+From the current Starter Kit root in a supported Linux/Docker environment:
 
 ```bash
 ./bb version
 ./bb doctor
+./bb check --agent ./agents/archimedes
+./bb model-check
 ./bb ready --agent ./agents/archimedes --json
-python dev/submission_preflight.py --json
+# If local Validator setup fails independently of the Agent, use the documented
+# model-dependent path: ./bb package --agent ./agents/archimedes
 ```
 
-Readiness requires a zero process exit, `"status": "succeeded"`, an existing ZIP, and exact
-agreement between the JSON artifact SHA-256 and a fresh file hash. Then verify the archive inventory
-and scan the staged archive—not merely the working tree—for prohibited content.
+Do not claim `bb ready` success without a zero exit, `"status": "succeeded"`,
+and matching artifact SHA-256. The published model-access guide permits local
+`bb check` plus `bb package` before Hosted Smoke for model-dependent Agents.
+Verify the archive inventory and scan the staged archive for prohibited content.
 
 ## Portal procedure
 
-1. Recheck [Rules](https://matrix.cstcloud.cn/build-bench/rules.html),
-   [FAQ](https://matrix.cstcloud.cn/build-bench/faq.html),
-   [Data and downloads](https://matrix.cstcloud.cn/build-bench/data.html), and
-   [Timeline](https://matrix.cstcloud.cn/build-bench/timeline.html).
+1. Recheck [Model access](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access),
+   [Rules](https://matrix.cstcloud.cn/build-bench/rules.html), and
+   [Data and downloads](https://matrix.cstcloud.cn/build-bench/data-downloads.html).
 2. Upload the exact immutable ZIP through
    [My submissions](https://matrix.cstcloud.cn/build-bench/my-submissions.html).
 3. Compare the complete portal digest with the local SHA-256 and preserve the submission ID.
 4. Wait for static checking and run/await Hosted Smoke exactly as the portal directs.
 5. Inspect every retained packaging, execution, patch, and final-build diagnostic.
-6. Verify that the selected final remains v0.2.14, submission `20261003T193341Z-1c80de94`, with the
-   complete SHA-256 recorded above; do not replace it without a new explicit action-time confirmation.
+6. After a current Hosted Smoke pass, explicitly confirm the intended qualified
+   version in My Submissions. The final version cannot be changed afterward.
 7. Preserve any later organizer Full Evaluation ID and permitted logs separately from public
    Development Validation and Hosted Smoke evidence.
 

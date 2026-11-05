@@ -6,14 +6,35 @@ source and target architectures, and makes a small guarded repair inside the pac
 
 This repository combines two layers:
 
-1. the official Build-Bench Starter Kit (`0.1.0-rc.3`), which defines packaging and execution; and
+1. the official Build-Bench Starter Kit (the checkout is `0.1.0-rc.3`; current release `0.1.0-rc.5` was used for the new package), which defines packaging and execution; and
 2. the Archimedes implementation, tests, experiment tools, release records, and retained evidence.
 
 The organizer evaluates the immutable Agent ZIP on separate Cases. The organizer—not this
 repository—derives the canonical patch from the modified worktree, reapplies it to a clean Case, and
 runs the target build.
 
-## Current release state
+## Current preparation state (4 November 2026 EDT)
+
+Archimedes `0.2.15` uses the organizer's injected `BB_MODEL_BASE_URL`,
+`BB_MODEL_NAME`, and `BB_MODEL_TOKEN_FILE`. The current package is
+[`dist/agent-submission.zip`](dist/agent-submission.zip), 102,003 bytes, SHA-256
+`5278102b2e6e2a48170169373d27a5b01c2cffd4bda592c64f319c6d63fbcacd`, built by the
+official Starter Kit `0.1.0-rc.5` (`bb check` and `bb package` passed; kit ZIP
+checksum matches the published release). The full Python suite passed (157 tests,
+2 skipped), and the Agent repaired `hello` inside the official Agent image in both
+mock and simulated hosted-model modes, including with the model endpoint down.
+Local `bb ready` still cannot validate on this Docker Desktop host because the
+nested OBS build cannot open `/dev/null`. Upload, the current Hosted Smoke Test,
+and final reconfirmation in the portal remain to be done. See
+[`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
+
+The organizer's [model-access guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)
+requires a completed official model call plus independent repair validation in
+the new Hosted Smoke Test. A previous final selection must be revalidated and
+explicitly reconfirmed by the end of 13 November 2026, Beijing time. Final
+confirmation cannot be changed.
+
+## Historical v0.2.14 portal state
 
 As of **4 October 2026 EDT**, the organizer portal shows this exact release as qualified and selected
 as the final version:
@@ -26,15 +47,13 @@ as the final version:
 | Portal state | Qualified; Hosted Smoke passed 1/1; Final version selected |
 | Selected | 4 October 2026 at 10:57 AM EDT |
 | Release source commit | `093b7f2` |
-| Canonical ZIP | `dist/agent-submission.zip` |
-| Named release copy | `dist/agent-submission-v0.2.14-ready.zip` |
+| Historical named ZIP | `dist/agent-submission-v0.2.14-ready.zip` |
 | ZIP size | 100,092 bytes |
 | SHA-256 | `714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed` |
 
-The two Agent ZIP paths above contain identical bytes. The selected source under
-`agents/archimedes/` is intentionally frozen because every file there, including its README, is
-part of the submitted artifact. Repository-level documentation and evidence can be maintained
-without changing those immutable bytes.
+This is the previous portal selection, recorded before the new model-access
+requirement. The Agent source has since advanced to v0.2.15. The portal state
+must be checked again before treating any version as finally confirmed.
 
 There is currently **no completed organizer Full Evaluation, official score, rank, or leaderboard
 result** for this submission. Hosted Smoke and Development Validation are valuable qualification
@@ -329,11 +348,12 @@ The repository-level preflight adds competition and provider gates:
 python dev/submission_preflight.py --json
 ```
 
-At the current checkpoint it confirms `source_and_archive_ready: true`, exact source/archive
-agreement, the official-ready digest, Docker/images, and archive structure. Its overall status is
-deliberately `not_ready` because a real organizer-compatible model endpoint, credential injection,
-network policy, real-model smoke, and several participant attestations are not available to the
-local process. Do not turn those checks green by inventing values or storing credentials.
+At the current checkpoint it confirms `source_and_archive_ready: true` and
+`local_submission_ready: true` for the exact package. It reports the failed
+local `bb ready` separately. Overall status remains `not_ready` until the
+current Hosted Smoke and final portal confirmation are attested for this ZIP
+digest. The local process receives no official model credentials; do not
+invent values or store credentials to make an advisory check green.
 
 Do not casually regenerate the currently selected v0.2.14 artifact. For any future version, use a
 new semantic Agent version, preserve the previous digest and portal ID, run the full gate, and upload

@@ -18,6 +18,7 @@ from .json_protocol import parse_model_json
 
 _MAX_RESPONSE_BYTES = 5_000_000
 _MAX_MODEL_CONTENT_CHARACTERS = 100_000
+_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -36,7 +37,9 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+_NO_REDIRECT_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}), _NoRedirectHandler()
+)
 
 
 def _reject_nonfinite_constant(value: str) -> None:
@@ -74,7 +77,13 @@ class OpenAICompatibleModelClient:
         self, payload: dict[str, JSONValue], timeout: float
     ) -> dict[str, JSONValue]:
         data = json.dumps(payload).encode("utf-8")
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if len(data) > _MAX_REQUEST_BYTES:
+            raise ModelProtocolError("model request exceeds the maximum allowed size")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Accept-Encoding": "identity",
+        }
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         request = urllib.request.Request(
@@ -87,9 +96,11 @@ class OpenAICompatibleModelClient:
             with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
                 body = response.read(_MAX_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            status = getattr(exc, "code", None)
             raise ModelError(
                 f"OpenAI-compatible request failed: {type(exc).__name__}"
-            ) from exc
+                + (f" HTTP {status}" if type(status) is int else "")
+            ) from None
         if len(body) > _MAX_RESPONSE_BYTES:
             raise ModelProtocolError(
                 "provider response exceeds the maximum allowed size"
@@ -116,15 +127,19 @@ class OpenAICompatibleModelClient:
         choices = response.get("choices")
         if (
             not isinstance(choices, list)
-            or not choices
+            or len(choices) != 1
             or not isinstance(choices[0], dict)
         ):
             raise ModelProtocolError("provider response has no choices")
         message = choices[0].get("message")
         if not isinstance(message, dict):
             raise ModelProtocolError("provider response has no message content")
+        if choices[0].get("finish_reason") != "stop":
+            raise ModelProtocolError("provider response did not finish normally")
+        if message.get("refusal"):
+            raise ModelProtocolError("provider response was refused")
         content = message.get("content")
-        if not isinstance(content, str):
+        if not isinstance(content, str) or not content.strip():
             raise ModelProtocolError("provider response has no message content")
         if len(content) > _MAX_MODEL_CONTENT_CHARACTERS:
             raise ModelProtocolError(
@@ -149,9 +164,8 @@ class OpenAICompatibleModelClient:
         ]
         payload: dict[str, JSONValue] = {
             "model": model,
-            "temperature": 0,
-            "max_tokens": 1000,
-            "response_format": {"type": "json_object"},
+            "max_completion_tokens": 8192,
+            "store": False,
             "messages": messages,
         }
         started = time.monotonic()

@@ -10,7 +10,7 @@ from pathlib import Path
 from .build.bb_build import BbBuildFeedbackProvider
 from .build.feedback import BuildFeedbackProvider
 from .build.unavailable import UnavailableBuildFeedbackProvider
-from .config import RuntimeConfig
+from .config import ModelBackend, RuntimeConfig
 from .constants import DEFAULT_WORKSPACE, PROTOCOL_VERSION
 from .errors import ArchimedesError
 from .logging_utils import configure_logging, log_event
@@ -30,15 +30,14 @@ def _write_terminal_diagnostic(
 ) -> None:
     """Best-effort protocol diagnostic without masking the fatal process exit.
 
-    Protocol 0.1 supports ``completed`` as its portable result status. The
-    nonzero process exit remains the authoritative Agent-error signal.
+    The nonzero process exit remains the authoritative Agent-error signal.
     """
     if workspace is None:
         return
     try:
         write_agent_result(
             workspace.output,
-            AgentResult(PROTOCOL_VERSION, "completed", message, []),
+            AgentResult(PROTOCOL_VERSION, "failed", message, []),
         )
     except Exception:
         logger.exception("[fatal] unable to write agent failure result")
@@ -60,7 +59,10 @@ def run() -> int:
         capabilities = CapabilityRegistry.discover()
         build_feedback: BuildFeedbackProvider
         bb_build_path = capabilities.path("bb-build")
-        if bb_build_path is not None:
+        if (
+            config.model_backend is not ModelBackend.HOSTED_OPENAI_COMPATIBLE
+            and bb_build_path is not None
+        ):
             build_feedback = BbBuildFeedbackProvider.discover(
                 executable=bb_build_path,
                 input_dir=workspace.input,

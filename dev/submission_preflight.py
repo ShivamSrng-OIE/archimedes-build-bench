@@ -1,7 +1,8 @@
-"""Strict development-side audit before uploading an Archimedes Agent version.
+"""Development-side package audit and explicit hosted qualification record.
 
-This does not replace ``bb ready`` or the hosted Smoke Test. It prevents a locally valid archive
-from being mistaken for a competition-ready LLM Agent and never prints credential values.
+Local checks cannot exercise the organizer model channel. The current Hosted Smoke
+and immutable final confirmation must be attested separately for the exact ZIP digest.
+No credential values are printed.
 """
 
 from __future__ import annotations
@@ -235,6 +236,26 @@ def _digest_attestation(
     return Check(name, passed, message)
 
 
+def _readiness_gates(by_name: dict[str, bool]) -> dict[str, bool]:
+    """Local packaging and hosted qualification are separate competition gates."""
+    source_ready = by_name["submission_structure"] and by_name["archive_matches_source"]
+    upload_ready = (
+        source_ready
+        and by_name["team_registration"]
+        and by_name["submission_access"]
+    )
+    return {
+        "source_and_archive_ready": source_ready,
+        "local_submission_ready": source_ready,
+        "upload_ready": upload_ready,
+        "full_evaluation_ready": (
+            upload_ready
+            and by_name["hosted_smoke"]
+            and by_name["final_confirmation"]
+        ),
+    }
+
+
 def audit(
     *,
     agent: Path,
@@ -242,9 +263,8 @@ def audit(
     environment: dict[str, str],
     team_registered: bool,
     submission_access_confirmed: bool,
-    competition_model_access_confirmed: bool,
-    model_smoke_sha256: str | None,
     hosted_smoke_sha256: str | None,
+    final_confirmed_sha256: str | None = None,
 ) -> dict[str, Any]:
     checks: list[Check] = []
     try:
@@ -271,26 +291,10 @@ def audit(
     except (OSError, UnicodeError, SubmissionError) as error:
         fresh, message = False, f"archive validation failed: {error}"
     checks.append(Check("archive_matches_source", fresh, message))
-    checks.extend(_model_checks(environment))
-    checks.append(
-        Check(
-            "competition_model_access",
-            competition_model_access_confirmed,
-            (
-                "organizer-compatible model delivery was manually confirmed"
-                if competition_model_access_confirmed
-                else "organizer-compatible model/network/credential delivery has not been confirmed"
-            ),
-        )
-    )
-    checks.append(
-        _digest_attestation(
-            "real_model_smoke",
-            model_smoke_sha256,
-            archive_digest,
-            "real-model smoke run",
-        )
-    )
+    # The official channel is injected only in Hosted Smoke and Full Evaluation.
+    # Development model settings may be inspected, but cannot gate a local ZIP.
+    if environment.get("ARCHIMEDES_MODEL_BACKEND"):
+        checks.extend(_model_checks(environment))
     checks.extend(_docker_checks(environment))
     checks.append(_ready_check(ROOT / "runs" / "ready", archive_digest))
     checks.extend(
@@ -315,42 +319,20 @@ def audit(
                 archive_digest,
                 "Hosted Smoke Test",
             ),
+            _digest_attestation(
+                "final_confirmation",
+                final_confirmed_sha256,
+                archive_digest,
+                "final portal confirmation",
+            ),
         ]
     )
     by_name = {item.name: item.passed for item in checks}
-    source_ready = all(
-        by_name[name]
-        for name in ("submission_structure", "agent_source_committed", "archive_matches_source")
-    )
-    local_ready = source_ready and all(
-        by_name[name]
-        for name in (
-            "real_model_backend",
-            "real_model_identifiers",
-            "model_base_url",
-            "model_credential_injection",
-            "competition_model_access",
-            "real_model_smoke",
-            "docker",
-            "agent_image",
-            "validator_image",
-            "example_assets_image",
-            "cleanup_image",
-            "disk_space",
-            "official_ready",
-        )
-    )
-    upload_ready = local_ready and by_name["team_registration"] and by_name["submission_access"]
-    full_evaluation_ready = upload_ready and by_name["hosted_smoke"]
+    gates = _readiness_gates(by_name)
     return {
         "schema_version": "0.1",
-        "status": "ready" if full_evaluation_ready else "not_ready",
-        "gates": {
-            "source_and_archive_ready": source_ready,
-            "local_submission_ready": local_ready,
-            "upload_ready": upload_ready,
-            "full_evaluation_ready": full_evaluation_ready,
-        },
+        "status": "ready" if gates["full_evaluation_ready"] else "not_ready",
+        "gates": gates,
         "archive": {
             "path": str(archive.resolve()),
             "sha256": archive_digest,
@@ -366,9 +348,8 @@ def main() -> int:
     parser.add_argument("--archive", type=Path, default=ROOT / "dist" / "agent-submission.zip")
     parser.add_argument("--team-registered", action="store_true")
     parser.add_argument("--submission-access-confirmed", action="store_true")
-    parser.add_argument("--competition-model-access-confirmed", action="store_true")
-    parser.add_argument("--model-smoke-sha256")
     parser.add_argument("--hosted-smoke-sha256")
+    parser.add_argument("--final-confirmed-sha256")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     result = audit(
@@ -377,9 +358,8 @@ def main() -> int:
         environment=dict(os.environ),
         team_registered=args.team_registered,
         submission_access_confirmed=args.submission_access_confirmed,
-        competition_model_access_confirmed=args.competition_model_access_confirmed,
-        model_smoke_sha256=args.model_smoke_sha256,
         hosted_smoke_sha256=args.hosted_smoke_sha256,
+        final_confirmed_sha256=args.final_confirmed_sha256,
     )
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))

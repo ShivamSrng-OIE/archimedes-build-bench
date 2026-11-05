@@ -17,6 +17,7 @@ class ModelBackend(str, Enum):
     MOCK = "mock"
     LOCAL_OPENAI_COMPATIBLE = "local_openai_compatible"
     REMOTE_OPENAI_COMPATIBLE = "remote_openai_compatible"
+    HOSTED_OPENAI_COMPATIBLE = "hosted_openai_compatible"
 
 
 class ContextMode(str, Enum):
@@ -132,7 +133,7 @@ class RuntimeConfig:
     workspace_root: Path
     model_backend: ModelBackend
     model_base_url: str
-    model_api_key: str | None
+    model_api_key: str | None = field(repr=False)
     fast_model: str
     strong_model: str
     model_tier_mode: ModelTierMode
@@ -156,7 +157,15 @@ class RuntimeConfig:
     @classmethod
     def from_environment(cls) -> "RuntimeConfig":
         """Load configuration without reading or copying a secret-bearing .env file."""
-        backend_raw = os.getenv("ARCHIMEDES_MODEL_BACKEND", "mock").strip().lower()
+        hosted_names = ("BB_MODEL_BASE_URL", "BB_MODEL_NAME", "BB_MODEL_TOKEN_FILE")
+        hosted_present = any(name in os.environ for name in hosted_names)
+        if hosted_present and not all(os.getenv(name, "").strip() for name in hosted_names):
+            raise ConfigurationError("incomplete hosted model configuration")
+        backend_raw = (
+            ModelBackend.HOSTED_OPENAI_COMPATIBLE.value
+            if hosted_present
+            else os.getenv("ARCHIMEDES_MODEL_BACKEND", "mock").strip().lower()
+        )
         try:
             backend = ModelBackend(backend_raw)
         except ValueError as exc:
@@ -183,11 +192,30 @@ class RuntimeConfig:
             ) from exc
 
         base_url = _validated_base_url(
+            os.environ["BB_MODEL_BASE_URL"] if hosted_present else
             os.getenv("ARCHIMEDES_MODEL_BASE_URL", "http://127.0.0.1:11434/v1"),
             backend,
         )
-        fast_model = os.getenv("ARCHIMEDES_FAST_MODEL", "mock-fast").strip()
-        strong_model = os.getenv("ARCHIMEDES_STRONG_MODEL", "mock-strong").strip()
+        if hosted_present:
+            if not base_url.endswith("/v1"):
+                raise ConfigurationError("hosted model base URL must end in /v1")
+            model_name = os.environ["BB_MODEL_NAME"].strip()
+            token_file = Path(os.environ["BB_MODEL_TOKEN_FILE"])
+            try:
+                with token_file.open("r", encoding="utf-8") as credential:
+                    token = credential.read(4097)
+            except (OSError, UnicodeError) as exc:
+                raise ConfigurationError(
+                    f"hosted model credential could not be read: {type(exc).__name__}"
+                ) from None
+            if not token.strip() or len(token) > 4096:
+                raise ConfigurationError("hosted model credential is empty or oversized")
+            fast_model = strong_model = model_name
+            model_api_key: str | None = token.strip()
+        else:
+            fast_model = os.getenv("ARCHIMEDES_FAST_MODEL", "mock-fast").strip()
+            strong_model = os.getenv("ARCHIMEDES_STRONG_MODEL", "mock-strong").strip()
+            model_api_key = os.getenv("ARCHIMEDES_MODEL_API_KEY")
         if backend is not ModelBackend.MOCK and (not fast_model or not strong_model):
             raise ConfigurationError(
                 "real model backends require non-empty model identifiers"
@@ -222,11 +250,13 @@ class RuntimeConfig:
             workspace_root=Path(os.getenv("BB_WORKSPACE", DEFAULT_WORKSPACE)),
             model_backend=backend,
             model_base_url=base_url,
-            model_api_key=os.getenv("ARCHIMEDES_MODEL_API_KEY"),
+            model_api_key=model_api_key,
             fast_model=fast_model,
             strong_model=strong_model,
             model_tier_mode=tier_mode,
-            model_timeout_seconds=_float("ARCHIMEDES_MODEL_TIMEOUT_SECONDS", 30.0, 0.1),
+            model_timeout_seconds=_float(
+                "ARCHIMEDES_MODEL_TIMEOUT_SECONDS", 620.0 if hosted_present else 30.0, 0.1
+            ),
             max_total_model_calls=_int("ARCHIMEDES_MAX_TOTAL_MODEL_CALLS", 12),
             max_strong_calls=_int("ARCHIMEDES_MAX_STRONG_CALLS", 3),
             max_total_tokens=_int("ARCHIMEDES_MAX_TOTAL_TOKENS", 50_000),

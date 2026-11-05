@@ -33,7 +33,7 @@ class MainEntrypointTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertEqual(payload["schema_version"], "0.1")
-        self.assertEqual(payload["status"], "completed")
+        self.assertEqual(payload["status"], "failed")
         self.assertEqual(
             payload["message"], "ARCHIMEDES_LOG_LEVEL must be a standard logging level"
         )

@@ -37,7 +37,12 @@ _TASK_INSTRUCTIONS = {
         "$(filter x86_64%,$(shell $(CC) -dumpmachine)). "
         "Do not return patch, changes, commands, markdown, or shell commands in place of edits."
     ),
-    ModelTask.PATCH_CRITIQUE: "Return accepted and findings for portability, semantic, and policy risks.",
+    ModelTask.PATCH_CRITIQUE: (
+        "Review the proposed repair against the diagnostic and exact edit preconditions. "
+        "Return accepted as a boolean and findings as an array of strings. "
+        "Reject only when a concrete portability, semantic, or policy defect is supported "
+        "by the supplied evidence. Do not execute the edit."
+    ),
     ModelTask.POST_BUILD_REFLECTION: "Return interpretation, hypothesis_updates, and next_action from frontier movement.",
 }
 

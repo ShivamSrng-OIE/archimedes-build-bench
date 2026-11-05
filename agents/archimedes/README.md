@@ -7,7 +7,7 @@ portable software repair. No benchmark-performance claim is made by this impleme
 
 ## Competition execution model
 
-The agent follows Build-Bench Starter Kit `0.1.0-rc.3`. It expects `BB_WORKSPACE` to name a
+The agent follows Build-Bench protocol `0.1` and is checked against Starter Kit `0.1.0-rc.5`. It expects `BB_WORKSPACE` to name a
 workspace with read-only-style `input/`, the only
 editable package tree at `work/repo/`, and writable `output/`. If the variable is absent, the
 official protocol default is `/workspace`. `python -m src.main` runs exactly one case and writes
@@ -108,6 +108,12 @@ one evidence-bearing replan. Invalid patch transactions, provider outages, and
 low-information build requests terminate cleanly without partial edits or
 misleading success/rollback claims.
 
+Version 0.2.15 adapts model access to the organizer's injected hosted settings.
+It uses the provided alias and credential file, sends the documented Chat
+Completions fields, checks normal completion and refusal, and records a model
+critique before applying a deterministic hosted repair. It fails with a
+nonzero exit and a redacted diagnostic when hosted model access is unusable.
+
 ## System architecture
 
 The runtime is separated into small typed packages:
@@ -189,6 +195,15 @@ script and refuses ambiguous matches.
 
 ## Model providers and local development
 
+In the organizer-hosted runtime, `BB_MODEL_BASE_URL`, `BB_MODEL_NAME`, and
+`BB_MODEL_TOKEN_FILE` select the official model automatically. Archimedes reads the
+short-lived credential from the injected file, uses the alias unchanged for both
+reasoning tiers, and never writes the token to output. A partial hosted configuration
+fails at initialization. Hosted requests use Chat Completions with `store=false` and
+`max_completion_tokens`; incomplete or refused results are rejected. A hosted run
+consults the model on a deterministic candidate before applying it and uses bounded
+model analysis and planning when no deterministic candidate is justified.
+
 Development does not require paid inference. `MOCK`, `LOCAL_OPENAI_COMPATIBLE`, and
 `REMOTE_OPENAI_COMPATIBLE` are logical modes behind `ModelClient`. Unit tests inject deterministic
 `MockModelClient` fixtures keyed by task and verify task/tier/input-size telemetry. Runtime backend
@@ -207,16 +222,14 @@ ARCHIMEDES_MAX_STRONG_CALLS=3
 ARCHIMEDES_MAX_TOTAL_TOKENS=50000
 ```
 
-The competition rulebook requires a participating Agent to use an LLM as its foundation model.
-`mock` is therefore for deterministic development and orchestration tests only; it is not an
-acceptable final competition configuration. The final immutable version must use a real local or
-remote OpenAI-compatible model through the organizer-approved network and credential mechanism.
-That mechanism must be validated after the protocol freeze; credentials are never bundled.
+The competition requires a foundation model. `mock` is for local, credential-free
+development only. Local `bb test` and `bb ready` do not inject official model access;
+the current Hosted Smoke Test must verify a completed official model call and an
+independently validated repair before final confirmation.
 
-Local mode rejects non-loopback base URLs. The reasoning layer contains no Ollama, llama.cpp, vLLM,
-or hosted-provider assumption. If a configured real provider is unusable, deterministic analysis
-runs first and the runtime returns a clear structured model error; it does not pretend heuristics are
-a foundation model.
+Local mode rejects non-loopback base URLs. In hosted mode, model failure exits nonzero
+with a credential-free diagnostic, even if static analysis found a candidate. The
+Agent does not claim a foundation-model call when no call completed.
 
 `auto` is the production tier policy: start with FAST and escalate to STRONG only on explicit
 uncertainty signals. `fast` and `strong` force a tier for controlled development comparisons; they
@@ -270,10 +283,9 @@ records commit, UTC timestamp, seed, model identifier, feature configuration, an
 
 ## Method disclosure
 
-- Foundation model: selected at deployment through `ARCHIMEDES_FAST_MODEL` and
-  `ARCHIMEDES_STRONG_MODEL`; the exact provider, model/version, and endpoint configuration must be
-  recorded with the final immutable submission. Mock fixtures are not a competition foundation
-  model.
+- Foundation model: the organizer-injected `BB_MODEL_NAME` alias is used unchanged in
+  hosted runs. Local development can use `ARCHIMEDES_FAST_MODEL` and
+  `ARCHIMEDES_STRONG_MODEL`. Mock fixtures are not a competition foundation model.
 - Prompting and loop: task-specific structured contracts in `src/models/prompts.py`; evidence-first
   failure analysis, bounded patch planning, portability/policy critique, guarded execution, and up
   to the configured repair-attempt limit with frontier-based retention or rollback.
@@ -286,20 +298,23 @@ records commit, UTC timestamp, seed, model identifier, feature configuration, an
 - External services: only the configured OpenAI-compatible model endpoint may be contacted, subject
   to the final competition network policy. The Agent does not access Docker, the Validator, or any
   evaluator service directly.
-- Reproducibility: inference providers can be nondeterministic even with deterministic request
-  settings. Filesystem traversal, identifiers, budgets, candidate gates, and JSON outputs are
+- Reproducibility: inference providers can be nondeterministic. Filesystem traversal,
+  identifiers, budgets, candidate gates, and JSON outputs are
   deterministic. The Agent has no cross-Case cache and declares no third-party Python dependency.
 
 Important current limitations:
 
-- The latest published Starter Kit is `0.1.0-rc.3`. The public Development Cases are `v0.1`;
-  the final competition protocol, credential delivery, and resource policy remain unpublished.
-- As of the 7 September 2026 CSTCloud audit, Full Evaluation is disabled and the official
-  network/API-key injection policy, final runtime budgets, resource limits, score denominator,
-  rerun limits, and credential mechanism remain unpublished.
+- The current published Starter Kit is `0.1.0-rc.5`; it corrects generated patches
+  for added and deleted text files. The public Development Cases remain `v0.1`.
+- The organizer supplies model access through three injected settings. Hosted Smoke
+  requires a completed model call and independent repair validation. Official Full
+  Evaluation limits and any platform-managed repair-round schedule will be announced
+  separately.
 - `BbBuildFeedbackProvider` is dormant unless the platform supplies both the executable and the
-  matching Case declaration. Host compiler results are never treated as official target-build
-  truth, and no socket, token, Validator path, or evaluator configuration is inferred by the Agent.
+  matching Case declaration. It is always disabled in organizer-hosted mode under the current
+  rule that Agents cannot request official builds during a run. Host compiler results are never
+  treated as official target-build truth, and no socket, token, Validator path, or evaluator
+  configuration is inferred by the Agent.
 - Deterministic planners cover uniquely evidenced compiler-feature checks, guarded x86 flags,
   portable source selection, atomic linkage, RPM architecture conditions, artifact paths,
   generated-configuration markers, byte serialization, pointer-width assumptions, synchronized

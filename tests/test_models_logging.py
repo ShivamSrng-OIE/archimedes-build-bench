@@ -147,7 +147,7 @@ class ModelsLoggingTests(unittest.TestCase):
                     '"path":"a.c","expected_text":"old","replacement":"new",'
                     '"rationale":"x"}]}'
                 )
-                return {"choices": [{"message": {"content": content}}]}
+                return {"choices": [{"finish_reason": "stop", "message": {"content": content}}]}
 
         client = StubClient()
         response = client.complete_json(
@@ -160,7 +160,10 @@ class ModelsLoggingTests(unittest.TestCase):
         self.assertEqual(response.data["repair_family"], "source_port")
         self.assertEqual(response.provider_requests, 2)
         self.assertEqual(len(client.payloads), 2)
-        self.assertEqual(client.payloads[0]["max_tokens"], 1000)
+        self.assertEqual(client.payloads[0]["max_completion_tokens"], 8192)
+        self.assertIs(client.payloads[0]["store"], False)
+        self.assertNotIn("temperature", client.payloads[0])
+        self.assertNotIn("response_format", client.payloads[0])
         messages = client.payloads[-1]["messages"]
         assert isinstance(messages, list)
         correction = messages[-1]
@@ -182,7 +185,7 @@ class ModelsLoggingTests(unittest.TestCase):
             ) -> dict[str, object]:
                 del payload, timeout
                 return {
-                    "choices": [{"message": {"content": json.dumps(FAILURE_RESPONSE)}}],
+                    "choices": [{"finish_reason": "stop", "message": {"content": json.dumps(FAILURE_RESPONSE)}}],
                     "usage": {"prompt_tokens": "not-a-number", "completion_tokens": -4},
                 }
 
@@ -236,7 +239,7 @@ class ModelsLoggingTests(unittest.TestCase):
             ) -> dict[str, object]:
                 del payload, timeout
                 self.requests += 1
-                return {"choices": [{"message": {"content": "x" * 100_001}}]}
+                return {"choices": [{"finish_reason": "stop", "message": {"content": "x" * 100_001}}]}
 
         client = StubClient()
         with self.assertRaisesRegex(ModelProtocolError, "message content exceeds"):
