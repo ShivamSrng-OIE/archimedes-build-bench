@@ -15,7 +15,7 @@ runs the target build.
 
 ## Current preparation state (4 November 2026 EDT)
 
-Archimedes `0.2.20` is the recommended final version. It keeps the hosted-model
+Archimedes `0.2.20` is the confirmed final version (confirmed in the portal on 5 November 2026; cannot be changed). It keeps the hosted-model
 support and the OBS log forensics fixes of `0.2.15`-`0.2.19`, and adds an
 architecture-aware repair for Debian `dpkg-gensymbols` "symbols disappeared"
 failures (11 of the 12 such public Development Cases; 15 of 200 Cases are now
@@ -25,8 +25,8 @@ modified, with the four earlier repairs byte-identical). The current package is
 official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation).
 The Python suite passed (200 tests in the official Python 3.11.9 image) and strict
 mypy is clean. It was uploaded as submission `20261105T144419Z-2225a4ad` and
-passed the Hosted Smoke Test 1/1 on 5 November 2026; only the participant's final
-confirmation of the v0.2.20 row in the portal remains. See
+passed the Hosted Smoke Test 1/1 on 5 November 2026; it was then confirmed as the final
+version. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
 
 The organizer's [model-access guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)

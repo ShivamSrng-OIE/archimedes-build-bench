@@ -20,7 +20,7 @@ changing a selection before the deadline; follow the current rules and
 confirmation UI for this release.
 
 ```text
-Agent version:       0.2.20 (recommended final)
+Agent version:       0.2.20 (CONFIRMED final)
 Archive:             dist/agent-submission.zip
 Archive bytes:       107,176
 SHA-256:             2cb11d01605bf25ea9a1dd82c0d3c5acc8f5057c5d08c48bb32d2990e006764b
@@ -53,8 +53,9 @@ Hosted Smoke:        PASSED 1/1 on 5 Nov 2026 (model access, Agent execution,
                      accepted=true, candidate_applied input/buildbench-hello.spec,
                      no model errors
 Submission ID:       20261105T144419Z-2225a4ad (portal SHA 2cb11d01605b...)
-Final confirmation:  pending -- the participant must click "Confirm final
-                     version" on the v0.2.20 row before 13 Nov 2026 (UTC+8)
+Final confirmation:  CONFIRMED on 5 Nov 2026 at 9:54 AM EST (portal: "Confirmed
+                     -- cannot change"), at the participant's explicit request.
+                     Organizers schedule Full Evaluation separately.
 
 Previous candidate:  0.2.19, SHA-256 4f3102f0...a92c9d, submission
                      20261105T035331Z-33f381b3, Hosted Smoke passed 1/1. Same
