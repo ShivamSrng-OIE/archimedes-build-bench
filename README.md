@@ -13,7 +13,11 @@ The organizer evaluates the immutable Agent ZIP on separate Cases. The organizer
 repository—derives the canonical patch from the modified worktree, reapplies it to a clean Case, and
 runs the target build.
 
-## Current preparation state (4 November 2026 EDT)
+**New here?** Start with the [Codebase Guide](docs/CODEBASE_GUIDE.md): a complete,
+plain-language walkthrough of the architecture, every subsystem, installation, testing,
+configuration, outputs and the release process.
+
+## Current preparation state (5 November 2026 EDT)
 
 Archimedes `0.2.20` is the confirmed final version (confirmed in the portal on 5 November 2026; cannot be changed). It keeps the hosted-model
 support and the OBS log forensics fixes of `0.2.15`-`0.2.19`, and adds an

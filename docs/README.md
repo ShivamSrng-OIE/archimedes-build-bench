@@ -7,6 +7,9 @@ the research motivation, intended subsystems, and early implementation requireme
 for provenance and for understanding why the code has its current shape; it is not a release or
 portal-state document.
 
+`CODEBASE_GUIDE.md` is the current, complete explanation of the codebase: architecture,
+subsystems, installation, configuration, outputs, testing and release. Read it first.
+
 Use the repository documentation in this order:
 
 1. current organizer rules and protocol;
