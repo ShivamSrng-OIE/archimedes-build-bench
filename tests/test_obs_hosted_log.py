@@ -75,6 +75,43 @@ class HostedObsLogTests(unittest.TestCase):
         analysis = analyze_build_log(log)
         self.assertIn("cannot find required tool", analysis.primary_diagnostic)
 
+    def test_marker_without_user_suffix_and_crlf_endings(self) -> None:
+        log = HOSTED_HELLO_LOG.replace(" (user abuild)", "").replace("\n", "\r\n")
+        analysis = analyze_build_log(log)
+        self.assertIn("bad exit status", analysis.primary_diagnostic.lower())
+
+    def test_separator_rule_is_not_a_build_marker(self) -> None:
+        log = (
+            "[   50s] configure: error: cannot find required tool\n"
+            "[  127s] -----------------------------------------------------------------\n"
+        )
+        analysis = analyze_build_log(log)
+        self.assertIn("cannot find required tool", analysis.primary_diagnostic)
+
+    def test_first_build_marker_bounds_preparation_phase(self) -> None:
+        log = HOSTED_HELLO_LOG + (
+            "[  140s] ----- building second.spec (user abuild)\n"
+            "[  141s] still running\n"
+        )
+        analysis = analyze_build_log(log)
+        self.assertIn("bad exit status", analysis.primary_diagnostic.lower())
+
+    def test_empty_and_prefix_only_logs_do_not_crash(self) -> None:
+        for log in ("", "[   0s] \n[   1s]\n", "\n\n"):
+            with self.subTest(log=log):
+                analysis = analyze_build_log(log)
+                self.assertEqual(analysis.primary_diagnostic, "")
+
+    def test_compiler_error_inside_build_keeps_path_without_prefix(self) -> None:
+        log = HOSTED_SETUP_NOISE + (
+            "[  127s] ----- building pkg.spec (user abuild)\n"
+            "[  403s] src/lib.c:1:47: error: narrowing conversion of '-81'\n"
+            "[  404s] error: Bad exit status from /var/tmp/rpm-tmp.x (%build)\n"
+        )
+        analysis = analyze_build_log(log)
+        self.assertTrue(analysis.primary_diagnostic.startswith("src/lib.c:1:47: error:"))
+        self.assertEqual(analysis.family.value, "compilation")
+
     def test_hosted_hello_log_is_repaired(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

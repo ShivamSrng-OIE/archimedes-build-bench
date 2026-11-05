@@ -22,15 +22,22 @@ confirmation UI for this release.
 ```text
 Agent version:       0.2.16 (recommended final)
 Archive:             dist/agent-submission.zip
-Archive bytes:       102,754
-SHA-256:             3107172d1c90816b2edb746f62e5a5bde3a77053796a1de2323570921d202c33
+Archive bytes:       102,735
+SHA-256:             a9f36b97a584687522cbe3af3e656441ff9563b7723a6b597698c22e13164e25
 Starter Kit:         0.1.0-rc.5, official ZIP SHA-256 1bd384af...dcfb56 verified
 Archive contents:    81 members, roots README.md, agent.yaml, requirements.lock, src
-Local Python tests:  163 passed, 2 skipped, 59 subtests passed (Python 3.11.15)
+Local Python tests:  168 passed, 2 skipped, 62 subtests passed (Python 3.11.15)
 Strict mypy:         no issues in 75 source files
 Official bb ready:   succeeded, hello 1/1 incl. final validation, same SHA-256
-                     (run 20261105T023758Z-31715, kit on WSL ext4 home);
+                     (run 20261105T024325Z-32551, kit on WSL ext4 home);
                      forensics: family packaging, "bad exit status ... (%build)"
+Archive audit:       81 members byte-identical to source, CRC ok, no symlinks
+                     or secrets, all requirements pinned with ==
+Forensics diff:      22 logs (16 synthetic, 4 Launchpad, 2 OBS) old vs new:
+                     only the 2 OBS logs changed, both as intended
+Agent-image replay:  genuine OBS log with build-root noise repaired in mock,
+                     simulated hosted (1 compliant request, token not leaked)
+                     and hosted-endpoint-down modes
 Hosted Smoke:        pending
 New submission ID:   pending
 Final confirmation:  pending

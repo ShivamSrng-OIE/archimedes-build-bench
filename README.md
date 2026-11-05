@@ -21,10 +21,10 @@ hosted-model support (`BB_MODEL_BASE_URL`, `BB_MODEL_NAME`,
 `0.2.15` Hosted Smoke (`20261105T013341Z-320e4be3`, passed 1/1) showed that the
 Agent chose OBS build-root noise (`ERROR: not all operations were successful.`)
 as the primary failure instead of the `%build` error. The current package is
-[`dist/agent-submission.zip`](dist/agent-submission.zip), 102,754 bytes, SHA-256
-`3107172d1c90816b2edb746f62e5a5bde3a77053796a1de2323570921d202c33`, built by the
+[`dist/agent-submission.zip`](dist/agent-submission.zip), 102,735 bytes, SHA-256
+`a9f36b97a584687522cbe3af3e656441ff9563b7723a6b597698c22e13164e25`, built by the
 official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation;
-kit run from the WSL ext4 home). The Python suite passed (163 tests, 2 skipped)
+kit run from the WSL ext4 home). The Python suite passed (168 tests, 2 skipped)
 and strict mypy is clean. Upload, the `0.2.16` Hosted Smoke Test, and final
 confirmation in the portal remain to be done. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.

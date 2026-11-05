@@ -19,7 +19,7 @@ _TIMESTAMP = re.compile(
 _OBS_ELAPSED = re.compile(r"^\[\s*\d+s\]\s?")
 # OBS prints this marker once the build root is ready and rpmbuild starts. Diagnostics
 # before it come from preparing the build root, so a failure inside the build wins over them.
-_OBS_BUILD_START = re.compile(r"^-{3,}\s+building\s+\S+\s+\(user\s+\S+\)", re.I)
+_OBS_BUILD_START = re.compile(r"^-{5,}\s+building\s+\S+(?:\s+\(user\s+\S+\))?\s*$", re.I)
 _PREFIX = re.compile(r"^(?:stdout|stderr|error|warning)\s*[|:]\s*", re.IGNORECASE)
 
 
