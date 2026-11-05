@@ -824,6 +824,7 @@ class RepairController:
                     ControllerStage.REPAIR.value,
                     "model_critique_unavailable",
                     error_type=type(exc).__name__,
+                    detail=str(exc)[:300],
                 )
                 critique = None
             if critique is not None:
@@ -847,6 +848,7 @@ class RepairController:
                             ControllerStage.REPAIR.value,
                             "model_unavailable",
                             error_type=type(exc).__name__,
+                            detail=str(exc)[:300],
                         )
                     if alternative is not None and alternative.repair_family not in excluded:
                         candidate = alternative
@@ -870,6 +872,7 @@ class RepairController:
                     ControllerStage.REPAIR.value,
                     "model_unavailable",
                     error_type=type(exc).__name__,
+                    detail=str(exc)[:300],
                 )
                 candidate = None
             if candidate is not None and candidate.repair_family in excluded:

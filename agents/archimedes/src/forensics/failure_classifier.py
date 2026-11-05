@@ -7,15 +7,15 @@ import re
 from ..schemas import FailureFamily
 
 _SIGNALS: tuple[tuple[FailureFamily, tuple[str, ...]], ...] = (
-    (FailureFamily.ENVIRONMENT, (r"no space left", r"permission denied", r"network.*unavailable", r"internal error", r"build killed with signal", r"minutes? of inactivity")),
-    (FailureFamily.DEPENDENCY, (r"missing package", r"could not resolve", r"no matching package", r"dependency.*not found", r"modulenotfounderror", r"no module named", r"command not found", r"can't exec .*no such file")),
+    (FailureFamily.ENVIRONMENT, (r"no space left", r"permission denied", r"network.*unavailable", r"internal error", r"build killed with signal", r"(?:minutes?|mins?|hours?|hrs?) of inactivity", r"job seems to be stuck here", r"out of memory: killed process")),
+    (FailureFamily.DEPENDENCY, (r"missing package", r"could not resolve", r"no matching package", r"dependency.*not found", r"modulenotfounderror", r"no module named", r"command not found", r"can't exec .*no such file", r"^(?:error:\s*)?unresolvable\b", r"\bnothing provides \S+(?:\s*[<>=]+\s*\S+)? needed by\b", r"failed build dependencies", r"but it is not (?:installable|going to be installed)", r"unmet dependencies")),
     (FailureFamily.CONFIGURATION, (r"configure: error", r"cmake error", r"unknown architecture", r"unsupported target", r"error:\s*invalid command")),
     (FailureFamily.LINKING, (r"undefined reference", r"undefined symbol", r"cannot find -l", r"(?:^|/)ld(?:\.\w+)?: ", r"linker command failed", r"\bBFD\b.*assertion fail", r"relocation .*can not be used", r"GCS is required by -z gcs")),
-    (FailureFamily.PACKAGING, (r"rpmbuild", r"debuild", r"packaging", r"package manifest", r"%files", r"dpkg-(?:deb|gencontrol|gensymbols): error", r"(?:cannot|can't) (?:access|stat).*debian/", r"cannot find \(any matches for\)", r"failed to remove .*debian/")),
-    (FailureFamily.TEST, (r"tests? failed", r"assertion(?:error| failed)", r"pytest", r"ctest", r"^FAIL(?:ED)?:", r"Failed test", r"(?:found issues in|test failure|failed unexpectedly)", r"illegal instruction", r"segmentation fault", r"differ: byte")),
+    (FailureFamily.PACKAGING, (r"bad exit status from \S+ \(%\w+\)", r"installed \(but unpackaged\)", r"file not found(?: by glob)?: \S*buildroot", r"\be: badness \d+ exceeds threshold", r"rpmbuild(?!/)", r"debuild", r"packaging", r"package manifest", r"%files", r"dpkg-(?:deb|gencontrol|gensymbols): error", r"(?:cannot|can't) (?:access|stat).*debian/", r"cannot find \(any matches for\)", r"failed to remove .*debian/")),
+    (FailureFamily.TEST, (r"^\s*\d+/\d+\s+\S+\s+FAIL\s", r"\.\w+:\d+: failure$", r"^\[\s+failed\s+\]", r"^--- fail: ", r"tests? failed", r"assertion(?:error| failed)", r"pytest", r"ctest", r"^FAIL(?:ED)?:", r"Failed test", r"(?:found issues in|test failure|failed unexpectedly)", r"illegal instruction", r"segmentation fault", r"differ: byte")),
     (FailureFamily.ARTIFACT, (r"expected artifact", r"artifact.*missing", r"validation failed")),
     (FailureFamily.COMPILATION, (r"fatal error:", r"error:", r"unrecognized command-line option", r"bad value .*?-march", r"intrinsic", r"assembler messages", r"reference .*not found in the current environment", r"inconsistent assumptions over library")),
-    (FailureFamily.BUILD_PREPARATION, (r"patch failed", r"cannot unpack", r"source.*missing")),
+    (FailureFamily.BUILD_PREPARATION, (r"patch failed", r"hunks? failed", r"cannot unpack", r"source.*missing")),
 )
 
 

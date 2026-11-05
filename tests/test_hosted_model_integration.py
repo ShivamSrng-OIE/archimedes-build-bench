@@ -165,6 +165,61 @@ class HostedModelIntegrationTests(unittest.TestCase):
         self.assertEqual(router.records[0].task, ModelTask.PATCH_CRITIQUE)
         self.assertNotIn("exit 9", script.read_text(encoding="utf-8"))
 
+    def test_hosted_http_error_keeps_repair_and_traces_status_without_token(self) -> None:
+        requests: list[str] = []
+
+        class FailingHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.rfile.read(int(self.headers["Content-Length"]))
+                requests.append(self.path)
+                self.send_response(502)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FailingHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                repo, output = make_workspace(
+                    root,
+                    metadata=json.dumps({"case_id": "generic-abort"}),
+                    log="configure stopped because target feature is unavailable\n",
+                )
+                script = repo / "build.sh"
+                script.write_text(
+                    '#!/bin/sh\necho "configure stopped because target feature is unavailable" >&2\nexit 9\n',
+                    encoding="utf-8",
+                )
+                token_file = root / "task-token"
+                token_file.write_text("secret-task-token", encoding="utf-8")
+                with patch.dict(os.environ, {
+                    "BB_WORKSPACE": str(root),
+                    "BB_MODEL_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1",
+                    "BB_MODEL_NAME": "organizer-alias",
+                    "BB_MODEL_TOKEN_FILE": str(token_file),
+                }, clear=True):
+                    exit_code = run()
+                self.assertEqual(exit_code, 0)
+                self.assertNotIn("exit 9", script.read_text(encoding="utf-8"))
+                trace = (output / "execution-trace.jsonl").read_text(encoding="utf-8")
+                events = [json.loads(line) for line in trace.splitlines()]
+                unavailable = [e for e in events if e["action"] == "model_critique_unavailable"]
+                self.assertEqual(len(unavailable), 1)
+                self.assertIn("HTTP 502", unavailable[0]["attributes"]["detail"])
+                for path in output.rglob("*"):
+                    if path.is_file():
+                        self.assertNotIn("secret-task-token", path.read_text(encoding="utf-8", errors="replace"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertEqual(requests, ["/v1/chat/completions"])
+
     def test_injected_http_channel_repairs_case_and_sends_supported_request(self) -> None:
         captured: list[dict[str, object]] = []
 

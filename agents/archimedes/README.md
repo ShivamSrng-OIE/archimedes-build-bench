@@ -121,6 +121,14 @@ and prefers diagnostics after the `----- building ... (user abuild)` marker,
 falling back to preparation-phase errors such as unresolvable dependencies
 when the build never starts.
 
+Version 0.2.17 keeps rpmbuild's `error:` lead-in on OBS lines so failures such
+as `error: File not found:` or `error: Installed (but unpackaged) file(s)
+found:` are chosen instead of the final host/time line, classifies rpm
+`Bad exit status ... (%stage)` as packaging and OBS `unresolvable` /
+`nothing provides ... needed by` as dependency failures, and records the
+redacted HTTP status when a hosted critique call fails while the validated
+deterministic repair is kept.
+
 ## System architecture
 
 The runtime is separated into small typed packages:

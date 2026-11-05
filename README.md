@@ -15,17 +15,17 @@ runs the target build.
 
 ## Current preparation state (4 November 2026 EDT)
 
-Archimedes `0.2.16` is the recommended final version. It keeps the `0.2.15`
+Archimedes `0.2.17` is the recommended final version. It keeps the `0.2.15`
 hosted-model support (`BB_MODEL_BASE_URL`, `BB_MODEL_NAME`,
 `BB_MODEL_TOKEN_FILE`) and fixes failure forensics on hosted Validator logs: the
 `0.2.15` Hosted Smoke (`20261105T013341Z-320e4be3`, passed 1/1) showed that the
 Agent chose OBS build-root noise (`ERROR: not all operations were successful.`)
 as the primary failure instead of the `%build` error. The current package is
-[`dist/agent-submission.zip`](dist/agent-submission.zip), 102,735 bytes, SHA-256
-`a9f36b97a584687522cbe3af3e656441ff9563b7723a6b597698c22e13164e25`, built by the
+[`dist/agent-submission.zip`](dist/agent-submission.zip), 103,791 bytes, SHA-256
+`c42af03518346e99c570d8819d6e9f8e8eaa3b34905f3a064d0557814bfe9041`, built by the
 official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation;
-kit run from the WSL ext4 home). The Python suite passed (168 tests, 2 skipped)
-and strict mypy is clean. Upload, the `0.2.16` Hosted Smoke Test, and final
+kit run from the WSL ext4 home). The Python suite passed (178 tests, 2 skipped)
+and strict mypy is clean. Upload, the `0.2.17` Hosted Smoke Test, and final
 confirmation in the portal remain to be done. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
 

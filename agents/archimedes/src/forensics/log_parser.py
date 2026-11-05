@@ -46,7 +46,31 @@ _PATTERNS = (
     DiagnosticPattern(re.compile(r"(?:^|\s)(?:as|nasm):.*\bError:", re.I), 99),
     DiagnosticPattern(re.compile(r"(?:unrecognized|unknown|unsupported|bad value).*(?:option|argument|march|mcpu|mabi|-m)", re.I), 100),
     DiagnosticPattern(re.compile(r"(?:relocation .*can not be used|recompile with -fPIC)", re.I), 99),
-    DiagnosticPattern(re.compile(r"build killed with signal|after \d+ minutes? of inactivity", re.I), 99),
+    DiagnosticPattern(
+        re.compile(
+            r"build killed with signal|after \d+\s*(?:minutes?|mins?|hours?|hrs?) of inactivity|"
+            r"job seems to be stuck here, killed",
+            re.I,
+        ),
+        99,
+    ),
+    DiagnosticPattern(re.compile(r"\bOut of memory: Killed process\b", re.I), 99),
+    # rpmbuild's own stage errors are causal and must outrank soft-failed test output.
+    DiagnosticPattern(
+        re.compile(
+            r"^error: (?:File not found(?: by glob)?: |Installed \(but unpackaged\) file\(s\) found|"
+            r"Failed build dependencies|line \d+: )",
+            re.I,
+        ),
+        97,
+    ),
+    DiagnosticPattern(re.compile(r"\b\d+ out of \d+ hunks? FAILED\b", re.I), 95),
+    DiagnosticPattern(re.compile(r"\bDepends: \S+ but it is not (?:installable|going to be installed)\b", re.I), 92),
+    DiagnosticPattern(re.compile(r"\bE: badness \d+ exceeds threshold\b", re.I), 90),
+    DiagnosticPattern(re.compile(r"^\s*\d+/\d+\s+\S+\s+FAIL\s", re.I), 90),
+    DiagnosticPattern(re.compile(r"\.\w+:\d+: Failure$|^\[\s+FAILED\s+\]\s+\w", re.I), 88),
+    DiagnosticPattern(re.compile(r"^--- FAIL: \S+", re.I), 88),
+    DiagnosticPattern(re.compile(r":\s*line \d+: .*: No such file or directory\s*$", re.I), 80),
     DiagnosticPattern(re.compile(r"(?:unknown|invalid).*(?:instruction|register|architecture|target)", re.I), 98),
     DiagnosticPattern(re.compile(r"\bBFD\b.*assertion fail", re.I), 98),
     DiagnosticPattern(re.compile(r"(?:intrinsic|builtin).*(?:mismatch|requires|undeclared|not available)", re.I), 96),
@@ -72,7 +96,10 @@ _PATTERNS = (
     DiagnosticPattern(re.compile(r"(?:^|\s)CMake Error(?: at|:)", re.I), 98),
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol)", re.I), 90),
     DiagnosticPattern(re.compile(r"(?:cannot find -l|library not found|missing package)", re.I), 88),
-    DiagnosticPattern(re.compile(r"(?:unresolvable|nothing provides \S+)", re.I), 92),
+    DiagnosticPattern(
+        re.compile(r"\bnothing provides \S+(?:\s*[<>=]+\s*\S+)? needed by\b", re.I), 72
+    ),
+    DiagnosticPattern(re.compile(r"^(?:error:\s*)?unresolvable\b", re.I), 70),
     DiagnosticPattern(re.compile(r"configure:(?: error|.*failed)", re.I), 86),
     DiagnosticPattern(re.compile(r"(?:^FAIL:|^FAILED\b|Failed test|failed \d+ tests?|error: test failed|Illegal instruction|Segmentation fault|differ: byte)", re.I), 84),
     DiagnosticPattern(re.compile(r"(?:reference .*not found in the current environment|makes inconsistent assumptions over library)", re.I), 82),
@@ -138,6 +165,10 @@ _NON_CAUSAL = (
     re.compile(r"has unexpected owner \(\d+\)\. Refusing to correct", re.I),
     re.compile(r"^(?:warning:\s*)?%(?:pre|post)(?:un|trans)?\([^)]*\) scriptlet failed", re.I),
     re.compile(r"^can't open /etc/polkit-1/", re.I),
+    # Final status lines written by the OBS wrapper and the hosted runner summarize the
+    # failure; they carry a host id and clock time but no cause.
+    re.compile(r"^\[build-case\]"),
+    re.compile(r"^[0-9a-f]{12} failed \"build \S+\" at ", re.I),
 )
 
 _FILE_PATTERNS = (
@@ -169,7 +200,12 @@ def normalize_log(raw_log: str) -> str:
     repetitions = 0
     for raw in raw_log.splitlines():
         line = _ANSI.sub("", raw).replace("\x00", "")[:10_000]
-        line = _PREFIX.sub("", _TIMESTAMP.sub("", _OBS_ELAPSED.sub("", line))).rstrip()
+        obs_line = _OBS_ELAPSED.sub("", line)
+        if obs_line != line:
+            # Keep rpmbuild's own "error:" lead-in on OBS lines; it is the diagnostic.
+            line = obs_line.rstrip()
+        else:
+            line = _PREFIX.sub("", _TIMESTAMP.sub("", line)).rstrip()
         if line == previous:
             repetitions += 1
             continue
@@ -202,6 +238,9 @@ def identify_primary_diagnostic(normalized_log: str) -> tuple[str, int]:
     found = _best_diagnostic(lines, 0)
     if found is not None:
         return found
+    for index in range(len(lines) - 1, -1, -1):
+        if not any(pattern.search(lines[index]) for pattern in _NON_CAUSAL):
+            return lines[index], index
     if lines:
         return lines[-1], len(lines) - 1
     return "", 0
