@@ -1,6 +1,6 @@
 # Build-Bench participant contract and platform audit
 
-Last comprehensive review: **4 October 2026 EDT**. The findings below are a
+Last full review: **4 October 2026 EDT**. The findings below are a
 historical v0.2.14 record. The current 21 October 2026 update is in
 [`SUBMISSION.md`](SUBMISSION.md): the organizer published model-access settings,
 Starter Kit `0.1.0-rc.5`, a new Hosted Smoke requirement, and irreversible

@@ -269,4 +269,4 @@ Keep these for provenance, but do not attribute later code to them:
 | 0.2.13 | `20261003T181216Z-814ddbfa` | `02650f9e429e7e780c5d610ba148c8fb08972b57246663442cecb1c16d20cb09` | Qualified; Hosted Smoke 1/1; not selected |
 | 0.2.14 | `20261003T193341Z-1c80de94` | `714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed` | Qualified; Hosted Smoke 1/1; selected final |
 
-The comprehensive current rules/site/corpus audit is in `COMPETITION_AUDIT.md`.
+The full rules, site and dataset audit is in `COMPETITION_AUDIT.md`.

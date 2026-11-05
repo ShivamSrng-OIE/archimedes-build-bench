@@ -1,23 +1,15 @@
-# Documentation guide
+# Documentation
 
-This directory contains design material rather than the live competition contract.
+`CODEBASE_GUIDE.md` is the complete explanation of the codebase: architecture,
+subsystems, installation, configuration, outputs, testing and release. Start there.
 
-`implementation.md` is the original Archimedes master implementation specification. It explains
-the research motivation, intended subsystems, and early implementation requirements. It is retained
-for provenance and for understanding why the code has its current shape; it is not a release or
-portal-state document.
+Recommended reading order:
 
-`CODEBASE_GUIDE.md` is the current, complete explanation of the codebase: architecture,
-subsystems, installation, configuration, outputs, testing and release. Read it first.
+1. the organizer's current rules and protocol on the Build-Bench website;
+2. `docs/CODEBASE_GUIDE.md`;
+3. the root `README.md`, `SUBMISSION.md` and `COMPETITION_AUDIT.md`;
+4. `agents/archimedes/README.md` for the agent's design notes and version history;
+5. the source and tests.
 
-Use the repository documentation in this order:
-
-1. current organizer rules and protocol;
-2. root `AGENTS.md` and the checked-in Starter Kit;
-3. root `README.md`, `SUBMISSION.md`, and `COMPETITION_AUDIT.md`;
-4. current source and tests;
-5. `agents/archimedes/README.md`, frozen inside the selected v0.2.14 artifact;
-6. `docs/implementation.md` for historical design intent.
-
-In particular, old Starter Kit versions, dates, platform states, and unpublished-protocol
-assumptions in the implementation specification must never override current evidence.
+When dates, versions or platform details differ between documents, the organizer's
+current website and the latest entry in `SUBMISSION.md` take precedence.

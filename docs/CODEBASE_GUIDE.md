@@ -131,13 +131,11 @@ archimedes/
 │   └── trace_viewer.py              renders execution-trace.jsonl as HTML
 ├── docs/
 │   ├── CODEBASE_GUIDE.md        this document
-│   ├── README.md                documentation reading order
-│   └── implementation.md        original design specification (historical)
+│   └── README.md                documentation reading order
 ├── runner/, templates/, bb      Starter Kit runtime and command (never modified)
 ├── example-cases/               organizer's released example Case (hello)
 ├── dist/                        built submission ZIPs (generated)
 ├── runs/                        local run evidence (generated, git-ignored)
-├── AGENTS.md                    authoritative rules for coding assistants
 ├── README.md                    project overview and current status
 ├── SUBMISSION.md                release, portal and evidence record
 └── COMPETITION_AUDIT.md         audit of the official participant contract
