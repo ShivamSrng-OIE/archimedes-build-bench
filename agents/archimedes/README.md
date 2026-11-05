@@ -141,6 +141,18 @@ Version 0.2.19 also keeps Python logging records out of the failure-family
 context and computes error signatures without the `[repeated N times]` marker,
 so repeated identical failures compare as unchanged across attempts.
 
+Version 0.2.20 adds a deterministic Debian symbols repair. When
+`dpkg-gensymbols` fails because symbols disappeared on the target architecture,
+the Agent reads the symbols diff from the build log and tags exactly those
+symbols with an `arch=!<target>` exclusion (or drops the target from an
+existing positive `arch=` list), so every other architecture keeps checking
+them. A symbol declared only for the target receives dpkg-gensymbols' own
+`#MISSING:` marker. The rule fails closed unless every reported symbol is found
+exactly once, the log architecture matches the Case target, and no more than a
+quarter of a file's symbols (at most 200) disappeared; a larger loss indicates
+a broken library rather than an architecture difference and is not masked.
+Model critique prompts now bound each edit's text; applied edits are unchanged.
+
 ## System architecture
 
 The runtime is separated into small typed packages:

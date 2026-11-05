@@ -73,6 +73,16 @@ from ..workspace.paths import WorkspacePaths
 from .candidate_ranker import rank_candidates
 from .hypotheses import generate_initial_hypotheses
 
+_PROMPT_EDIT_CHARACTERS = 6_000
+
+
+def _clip_for_prompt(text: str, limit: int = _PROMPT_EDIT_CHARACTERS) -> str:
+    """Bound one edit's text in a model prompt; the applied edit is never clipped."""
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return f"{text[:half]}\n[... {len(text) - limit} characters omitted ...]\n{text[-half:]}"
+
 
 class ControllerStage(str, Enum):
     CASE_INGESTION = "case_ingestion"
@@ -811,8 +821,9 @@ class RepairController:
                         f"repair_family={candidate.repair_family.value}\n"
                         f"rationale={candidate.rationale}\n"
                         + "\n".join(
-                            f"path={edit.path}\nexpected_text={edit.expected_text}\n"
-                            f"replacement={edit.replacement}"
+                            f"path={edit.path}\n"
+                            f"expected_text={_clip_for_prompt(edit.expected_text or '')}\n"
+                            f"replacement={_clip_for_prompt(edit.replacement)}"
                             for edit in candidate.planned_edits
                         )
                     ),

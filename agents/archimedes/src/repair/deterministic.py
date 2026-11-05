@@ -244,6 +244,181 @@ def _debian_multiarch_path(
     )
 
 
+_DEBIAN_ARCH = {
+    Architecture.X86_64: "amd64",
+    Architecture.AARCH64: "arm64",
+    Architecture.RISCV64: "riscv64",
+}
+_SYMBOLS_ERROR = re.compile(
+    r"^dpkg-gensymbols: error: some symbols or patterns disappeared", re.MULTILINE
+)
+_SYMBOLS_HEADER = re.compile(
+    r"^--- (?P<path>debian/[A-Za-z0-9_.+-]+\.symbols(?:\.[a-z0-9-]+)?) "
+    r"\(\S+_(?P<arch>[a-z0-9]+)\)$"
+)
+_SYMBOLS_MISSING = re.compile(r"^\+#MISSING: [^#\s]+#(?P<line>\s.*)$")
+_SYMBOLS_LINE = re.compile(r"^(?P<lead>[ \t]+)(?:\((?P<tags>[^()]*)\))?(?P<rest>[^\s(#|*].*)$")
+_MAX_DISAPPEARED_PER_FILE = 200
+_MAX_DISAPPEARED_FRACTION = 0.25
+
+
+def _exclude_symbol_arch(line: str, arch: str) -> str | None:
+    """Return ``line`` tagged so the symbol is not expected on ``arch``, or None."""
+    match = _SYMBOLS_LINE.match(line)
+    if match is None:
+        return None
+    tags = [tag for tag in (match.group("tags") or "").split("|") if tag]
+    arch_tags = [index for index, tag in enumerate(tags) if tag.startswith("arch=")]
+    if len(arch_tags) > 1:
+        return None
+    if not arch_tags:
+        tags.append(f"arch=!{arch}")
+    else:
+        index = arch_tags[0]
+        values = tags[index][len("arch="):].split()
+        negated = [value.startswith("!") for value in values]
+        if values and all(negated):
+            if f"!{arch}" in values:
+                return None
+            values.append(f"!{arch}")
+        elif values and not any(negated):
+            if arch not in values:
+                return None
+            values = [value for value in values if value != arch]
+            if not values:
+                return None
+        else:
+            return None
+        tags[index] = "arch=" + " ".join(values)
+    return f"{match.group('lead')}({'|'.join(tags)}){match.group('rest')}"
+
+
+def _only_target_arch(line: str, arch: str) -> bool:
+    match = _SYMBOLS_LINE.match(line)
+    if match is None:
+        return False
+    tags = [tag for tag in (match.group("tags") or "").split("|") if tag]
+    return [tag for tag in tags if tag.startswith("arch=")] == [f"arch={arch}"]
+
+
+def _disappeared_symbols(log: str) -> dict[str, tuple[str, dict[str, str]]]:
+    """Map each reported symbols file to (build arch, {disappeared line: #MISSING line})."""
+    reported: dict[str, tuple[str, dict[str, str]]] = {}
+    lines = log.splitlines()
+    index = 0
+    while index < len(lines):
+        header = _SYMBOLS_HEADER.match(lines[index])
+        if header is None or index + 1 >= len(lines) or not lines[index + 1].startswith(
+            "+++ dpkg-gensymbols"
+        ):
+            index += 1
+            continue
+        removed: list[str] = []
+        missing: dict[str, str] = {}
+        index += 2
+        while index < len(lines) and lines[index][:1] in {"@", " ", "-", "+"}:
+            line = lines[index]
+            if line.startswith("--- "):
+                break
+            if line.startswith("-"):
+                removed.append(line[1:])
+            else:
+                marker = _SYMBOLS_MISSING.match(line)
+                if marker is not None:
+                    missing[marker.group("line")] = line[1:]
+            index += 1
+        path, arch = header.group("path"), header.group("arch")
+        if path in reported and reported[path][0] != arch:
+            return {}
+        merged = dict(reported.get(path, (arch, {}))[1])
+        for line in removed:
+            if line in missing:
+                merged.setdefault(line, missing[line])
+        reported[path] = (arch, merged)
+    return reported
+
+
+def _debian_symbols_arch(
+    files: list[tuple[str, str]], log: str, case: CaseData
+) -> DeterministicMatch | None:
+    """Exclude symbols that dpkg-gensymbols proved absent on the target architecture.
+
+    The edit mirrors the Debian maintainer workflow for architecture-specific ABI: the
+    symbols that the target build reported as disappeared receive an ``arch=!<target>``
+    tag, so every other architecture keeps checking them. The rule fails closed unless
+    every reported symbol is found exactly once and can be tagged unambiguously.
+    """
+    if _SYMBOLS_ERROR.search(log) is None:
+        return None
+    reported = _disappeared_symbols(log)
+    if not reported or not any(lines for _, lines in reported.values()):
+        return None
+    expected_arch = _DEBIAN_ARCH.get(case.target_architecture.canonical)
+    file_map = dict(files)
+    rationale = (
+        "mark symbols that dpkg-gensymbols reports as absent on the target architecture "
+        "with an architecture exclusion tag, keeping them checked on every other architecture"
+    )
+    planned: list[PlannedEdit] = []
+    for path in sorted(reported):
+        arch, disappeared = reported[path]
+        if not disappeared:
+            continue
+        if expected_arch is not None and arch != expected_arch:
+            return None
+        text = file_map.get(path)
+        if text is None:
+            return None
+        file_lines = text.splitlines(keepends=True)
+        stripped = [line.rstrip(" \t\r\n") for line in file_lines]
+        symbol_count = sum(1 for line in stripped if _SYMBOLS_LINE.match(line))
+        if (
+            len(disappeared) > _MAX_DISAPPEARED_PER_FILE
+            or len(disappeared) > symbol_count * _MAX_DISAPPEARED_FRACTION
+        ):
+            # A large share of vanished ABI is a broken library, not an architecture
+            # difference; tagging it would only hide the failure.
+            return None
+        replacements: dict[int, str] = {}
+        for symbol, missing_marker in disappeared.items():
+            positions = [i for i, line in enumerate(stripped) if line == symbol]
+            if len(positions) != 1:
+                return None
+            tagged = _exclude_symbol_arch(symbol, arch)
+            if tagged is None:
+                if not _only_target_arch(symbol, arch):
+                    return None
+                # The symbol was declared for the target architecture alone and is gone
+                # there, so no architecture remains; record dpkg-gensymbols' own marker.
+                tagged = missing_marker
+            position = positions[0]
+            ending = file_lines[position][len(file_lines[position].rstrip("\r\n")):]
+            replacements[position] = tagged + ending
+        # The executor accepts one operation per file, so compose every change in this
+        # file into a single replacement spanning the first to the last tagged line.
+        first, last = min(replacements), max(replacements)
+        expected = "".join(file_lines[first : last + 1])
+        replacement = "".join(
+            replacements.get(i, file_lines[i]) for i in range(first, last + 1)
+        )
+        while text.count(expected) != 1 and first > 0:
+            first -= 1
+            expected = file_lines[first] + expected
+            replacement = file_lines[first] + replacement
+        if text.count(expected) != 1:
+            return None
+        planned.append(_edit(path, expected, replacement, rationale))
+    if not planned:
+        return None
+    return DeterministicMatch(
+        RepairFamily.PACKAGING_RULE,
+        rationale,
+        tuple(planned),
+        confidence=0.95,
+        risk=0.05,
+    )
+
+
 def _unconditional_build_abort(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
@@ -770,6 +945,9 @@ def match_deterministic_repair(
     multiarch = _debian_multiarch_path(files, log, case)
     if multiarch is not None:
         return multiarch
+    symbols = _debian_symbols_arch(files, log, case)
+    if symbols is not None:
+        return symbols
     autoconf_flags = _autoconf_rejected_x86_flags(files, log, case)
     if autoconf_flags is not None:
         return autoconf_flags
