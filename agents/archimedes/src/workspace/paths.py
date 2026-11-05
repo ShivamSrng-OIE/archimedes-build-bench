@@ -1,9 +1,13 @@
-"""Centralized representation of the competition workspace contract."""
+"""The official workspace layout.
+
+It has the read-only ``input/``, the writable ``work/repo/`` worktree and
+``output/``.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import WorkspaceError
@@ -11,6 +15,17 @@ from ..errors import WorkspaceError
 
 @dataclass(frozen=True, slots=True)
 class WorkspacePaths:
+    """Resolved locations of the workspace directories.
+
+    Attributes:
+        root: The resolved workspace root.
+        input: Read-only Case metadata and failure evidence.
+        work: Parent of the worktree.
+        repo: The writable package worktree.
+        output: Where the result and diagnostics are written.
+        probe_temp: Scratch directory for probes, ``output/probes``.
+    """
+
     root: Path
     input: Path
     work: Path
@@ -19,11 +34,23 @@ class WorkspacePaths:
     probe_temp: Path
 
     @classmethod
-    def resolve(cls, root: Path, *, create_output: bool = True) -> "WorkspacePaths":
-        """Resolve workspace paths and validate the immutable/mutable boundaries.
+    def resolve(cls, root: Path, *, create_output: bool = True) -> WorkspacePaths:
+        """Resolve the workspace and check that its directories stay inside the root.
 
-        The input and work/repo directories must already exist. Only output and its
-        probe subdirectory may be created by this abstraction.
+        ``input/`` and ``work/repo/`` must already exist; only ``output/`` and
+        ``output/probes`` may be created here.
+
+        Args:
+            root: The workspace root, usually from ``BB_WORKSPACE``.
+            create_output: Whether to create and check the output directories.
+
+        Returns:
+            The resolved paths.
+
+        Raises:
+            WorkspaceError: If the root or a required directory is missing or
+                unreadable, a directory resolves outside the root, an output
+                path is a symlink, or the output directories cannot be created.
         """
         try:
             resolved = root.expanduser().resolve(strict=True)

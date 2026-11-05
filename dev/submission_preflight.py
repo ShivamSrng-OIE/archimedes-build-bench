@@ -1,8 +1,8 @@
-"""Development-side package audit and explicit hosted qualification record.
+"""Audit the Agent submission ZIP locally and record the hosted steps confirmed for it.
 
-Local checks cannot exercise the organizer model channel. The current Hosted Smoke
-and immutable final confirmation must be attested separately for the exact ZIP digest.
-No credential values are printed.
+Local checks cannot reach the organizer's model channel, so a passing Hosted Smoke Test and
+the irreversible final confirmation are supplied by hand as the SHA-256 of the ZIP they
+applied to. The audit never prints credential values.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from runner.agent_submission import (  # noqa: E402
+from runner.agent_submission import (
     SubmissionError,
     check_submission,
     create_deterministic_zip,
@@ -35,12 +35,28 @@ from runner.agent_submission import (  # noqa: E402
 
 @dataclass(frozen=True, slots=True)
 class Check:
+    """The result of one named audit check.
+
+    Attributes:
+        name: A stable identifier, such as "archive_matches_source".
+        passed: Whether the check passed.
+        message: A one-line explanation for a person reading the report.
+    """
+
     name: str
     passed: bool
     message: str
 
 
 def _run(arguments: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run a command from the repository root and capture its output as text.
+
+    Args:
+        arguments: The program and its arguments.
+
+    Returns:
+        The finished process. A nonzero exit code is not treated as an error.
+    """
     return subprocess.run(
         arguments,
         cwd=ROOT,
@@ -51,10 +67,38 @@ def _run(arguments: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _digest(path: Path) -> str:
+    """Return a file's SHA-256 digest.
+
+    Args:
+        path: The file to hash.
+
+    Returns:
+        The digest as lowercase hex.
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _archive_fresh(agent: Path, archive: Path) -> tuple[bool, str, str | None]:
+    """Check that the ZIP on disk was built from the current Agent source.
+
+    A fresh ZIP is built in a temporary folder with the Starter Kit's
+    `create_deterministic_zip` and compared member by member with `archive`: the same
+    names, the same bytes, and the same timestamp, permission bits and compression method.
+    Because the members are compared and not the raw ZIP bytes, a ZIP whose data was
+    compressed by a different zlib build still matches.
+
+    Args:
+        agent: The Agent folder.
+        archive: The submission ZIP to check.
+
+    Returns:
+        A tuple of (passed, message, digest), where digest is the SHA-256 of `archive`, or
+        None when the file does not exist.
+
+    Raises:
+        SubmissionError: If the Starter Kit cannot build a ZIP from `agent`.
+        OSError: If a file cannot be read or written.
+    """
     if not archive.is_file():
         return False, "submission archive is missing", None
     actual_digest = _digest(archive)
@@ -87,6 +131,20 @@ def _archive_fresh(agent: Path, archive: Path) -> tuple[bool, str, str | None]:
 
 
 def _model_checks(environment: dict[str, str]) -> list[Check]:
+    """Check that the development model settings name a real, fully configured backend.
+
+    Nothing is contacted; only the settings are inspected. For the API key, only its
+    presence is checked and its value is never reported. A local backend needs no key,
+    a remote one does.
+
+    Args:
+        environment: The environment variables to inspect, normally a copy of os.environ.
+
+    Returns:
+        Four checks: "real_model_backend", "real_model_identifiers" (FAST and STRONG
+        model names set and not starting with "mock"), "model_base_url" and
+        "model_credential_injection".
+    """
     backend = environment.get("ARCHIMEDES_MODEL_BACKEND", "mock").strip().lower()
     fast = environment.get("ARCHIMEDES_FAST_MODEL", "mock-fast").strip()
     strong = environment.get("ARCHIMEDES_STRONG_MODEL", "mock-strong").strip()
@@ -135,6 +193,20 @@ def _model_checks(environment: dict[str, str]) -> list[Check]:
 
 
 def _docker_checks(environment: dict[str, str]) -> list[Check]:
+    """Check that Docker, the Starter Kit images and enough disk space are available.
+
+    The image names come from `BB_AGENT_IMAGE`, `BB_VALIDATOR_IMAGE`,
+    `BB_EXAMPLE_ASSETS_IMAGE` and `BB_CLEANUP_IMAGE`, falling back to the pinned defaults
+    below. Images are only looked up locally with `docker image inspect`, never pulled.
+
+    Args:
+        environment: The environment variables to read image overrides from.
+
+    Returns:
+        A single failed "docker" check if the Docker CLI is not on PATH. Otherwise a
+        "docker" daemon check, one check per image, and a "disk_space" check that needs
+        at least 3 GiB free on the repository's drive.
+    """
     docker = shutil.which("docker")
     if docker is None:
         return [Check("docker", False, "Docker CLI is unavailable")]
@@ -179,6 +251,18 @@ def _docker_checks(environment: dict[str, str]) -> list[Check]:
 
 
 def _latest_ready_result(ready_root: Path) -> tuple[dict[str, Any] | None, Path | None]:
+    """Find and read the most recent `bb ready` result.json under runs/ready.
+
+    "Most recent" means the newest file modification time, with the path as a tie-breaker.
+
+    Args:
+        ready_root: The folder holding one subfolder per `bb ready` run.
+
+    Returns:
+        A tuple of (payload, path). Both are None when no result exists. The payload is
+        None but the path is set when the newest file cannot be read or is not a JSON
+        object.
+    """
     results = sorted(
         ready_root.glob("*/result.json"),
         key=lambda path: (path.stat().st_mtime_ns, path.as_posix()),
@@ -194,6 +278,17 @@ def _latest_ready_result(ready_root: Path) -> tuple[dict[str, Any] | None, Path 
 
 
 def _ready_check(ready_root: Path, archive_digest: str | None) -> Check:
+    """Check that the latest `bb ready` run succeeded and produced this exact ZIP.
+
+    Args:
+        ready_root: The folder holding one subfolder per `bb ready` run.
+        archive_digest: SHA-256 of the submission ZIP on disk, or None if it is missing.
+
+    Returns:
+        An "official_ready" check that passes only if the latest result has status
+        "succeeded", exit code 0, and a first artifact whose SHA-256 equals
+        `archive_digest`.
+    """
     payload, path = _latest_ready_result(ready_root)
     if payload is None or path is None:
         return Check("official_ready", False, "no readable bb ready result exists")
@@ -220,6 +315,22 @@ def _ready_check(ready_root: Path, archive_digest: str | None) -> Check:
 def _digest_attestation(
     name: str, supplied: str | None, archive_digest: str | None, label: str
 ) -> Check:
+    """Check that a hand-supplied SHA-256 matches the current ZIP.
+
+    This is how a person records that a hosted step (the Hosted Smoke Test or the final
+    portal confirmation) was done for this exact ZIP. The value is trimmed and lowercased,
+    must be 64 hex characters, and is compared in constant time.
+
+    Args:
+        name: The check's name, such as "hosted_smoke".
+        supplied: The digest given on the command line, or None if it was not given.
+        archive_digest: SHA-256 of the submission ZIP on disk, or None if it is missing.
+        label: A readable name for the step, used in the message.
+
+    Returns:
+        A check that passes only when `supplied` is a valid digest equal to
+        `archive_digest`.
+    """
     normalized = supplied.strip().lower() if supplied else ""
     valid = bool(re.fullmatch(r"[0-9a-f]{64}", normalized))
     passed = bool(
@@ -237,7 +348,26 @@ def _digest_attestation(
 
 
 def _readiness_gates(by_name: dict[str, bool]) -> dict[str, bool]:
-    """Local packaging and hosted qualification are separate competition gates."""
+    """Combine individual check results into the competition readiness gates.
+
+    Local packaging and hosted qualification are separate gates: a ZIP can be ready to
+    upload long before it has passed the Hosted Smoke Test and been confirmed as final.
+    Only the checks named below feed the gates; the others are informational.
+
+    Args:
+        by_name: Each check's name mapped to whether it passed. Must include
+            "submission_structure", "archive_matches_source", "team_registration",
+            "submission_access", "hosted_smoke" and "final_confirmation".
+
+    Returns:
+        The gates "source_and_archive_ready" and "local_submission_ready" (both: the
+        static checks pass and the ZIP matches the source), "upload_ready" (plus team
+        registration and submission access), and "full_evaluation_ready" (plus Hosted
+        Smoke and final confirmation for this ZIP).
+
+    Raises:
+        KeyError: If one of the required check names is missing.
+    """
     source_ready = by_name["submission_structure"] and by_name["archive_matches_source"]
     upload_ready = (
         source_ready
@@ -266,6 +396,34 @@ def audit(
     hosted_smoke_sha256: str | None,
     final_confirmed_sha256: str | None = None,
 ) -> dict[str, Any]:
+    """Run every preflight check on the Agent and its submission ZIP.
+
+    The checks are: the Starter Kit's static submission check, a clean Git state for the
+    Agent folder, the ZIP matching the current source, model settings (only when
+    `ARCHIMEDES_MODEL_BACKEND` is set), Docker and images, the latest `bb ready` result,
+    and the manual confirmations. Only some of them decide the gates; see
+    `_readiness_gates`.
+
+    Args:
+        agent: The Agent folder. It must be inside the repository.
+        archive: The submission ZIP to audit.
+        environment: Environment variables to read model and image settings from.
+        team_registered: Whether team registration was confirmed by hand.
+        submission_access_confirmed: Whether submission access on the portal was
+            confirmed by hand.
+        hosted_smoke_sha256: SHA-256 of the ZIP that passed the Hosted Smoke Test, or None.
+        final_confirmed_sha256: SHA-256 of the ZIP confirmed as final on the portal, or
+            None.
+
+    Returns:
+        A report with "schema_version", "status" ("ready" only when
+        full_evaluation_ready holds, otherwise "not_ready"), "gates", the ZIP's path and
+        SHA-256 under "archive", the static check report under "agent" (None if it
+        failed), and every check under "checks".
+
+    Raises:
+        ValueError: If `agent` is not inside the repository root.
+    """
     checks: list[Check] = []
     try:
         report = check_submission(agent)
@@ -291,8 +449,8 @@ def audit(
     except (OSError, UnicodeError, SubmissionError) as error:
         fresh, message = False, f"archive validation failed: {error}"
     checks.append(Check("archive_matches_source", fresh, message))
-    # The official channel is injected only in Hosted Smoke and Full Evaluation.
-    # Development model settings may be inspected, but cannot gate a local ZIP.
+    # The organizer injects the real model settings only during Hosted Smoke and Full
+    # Evaluation, so local model settings are reported here but never decide a gate.
     if environment.get("ARCHIMEDES_MODEL_BACKEND"):
         checks.extend(_model_checks(environment))
     checks.extend(_docker_checks(environment))
@@ -343,6 +501,24 @@ def audit(
 
 
 def main() -> int:
+    """Run the preflight audit from the command line.
+
+    Command-line options:
+        --agent: The Agent folder. Default agents/archimedes.
+        --archive: The submission ZIP. Default dist/agent-submission.zip.
+        --team-registered: Record that team registration was confirmed.
+        --submission-access-confirmed: Record that portal submission access was confirmed.
+        --hosted-smoke-sha256: SHA-256 of the ZIP that passed the Hosted Smoke Test.
+        --final-confirmed-sha256: SHA-256 of the ZIP confirmed as final on the portal.
+        --json: Print the full report as JSON. Without it, print PASS or FAIL for each
+            gate and the message of every failed check.
+
+    Returns:
+        0 if the report status is "ready", otherwise 1.
+
+    Raises:
+        ValueError: If the Agent folder is not inside the repository root.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent", type=Path, default=ROOT / "agents" / "archimedes")
     parser.add_argument("--archive", type=Path, default=ROOT / "dist" / "agent-submission.zip")

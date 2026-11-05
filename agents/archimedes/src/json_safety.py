@@ -1,7 +1,6 @@
-"""Small, allocation-free guards applied before decoding untrusted JSON."""
+"""Cheap checks run on untrusted JSON text before it is handed to ``json.loads``."""
 
 from __future__ import annotations
-
 
 MAX_JSON_NESTING = 128
 
@@ -9,11 +8,22 @@ MAX_JSON_NESTING = 128
 def reject_excessive_json_nesting(
     text: str, *, max_depth: int = MAX_JSON_NESTING
 ) -> None:
-    """Reject structurally deep JSON without counting brackets inside strings.
+    """Refuse JSON text whose arrays and objects nest deeper than a limit.
 
-    Python's accelerated JSON decoder does not consistently raise ``RecursionError``
-    at the same nesting level across builds.  A bounded lexical pass makes the
-    resource limit deterministic; syntax validation remains the decoder's job.
+    Python's C JSON decoder does not raise ``RecursionError`` at the same depth
+    on every build, so a single pass over the characters makes the limit the
+    same everywhere. Brackets inside string literals are skipped. Syntax errors
+    are left for the decoder to report.
+
+    Args:
+        text: The JSON text to check.
+        max_depth: Deepest nesting allowed, 128 by default.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If the nesting goes deeper than ``max_depth``.
     """
     depth = 0
     in_string = False

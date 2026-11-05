@@ -1,3 +1,9 @@
+"""Tests for dev/submission_preflight.py, the checklist run before uploading a submission.
+
+They cover version agreement with agent.yaml, the readiness gates, model settings
+checks, picking the newest ready result, archive freshness and digest attestations.
+"""
+
 from __future__ import annotations
 
 import json
@@ -5,6 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
+
+from src.constants import AGENT_VERSION
 
 from dev.submission_preflight import (
     _archive_fresh,
@@ -14,17 +22,26 @@ from dev.submission_preflight import (
     _readiness_gates,
 )
 from runner.agent_submission import create_deterministic_zip
-from src.constants import AGENT_VERSION
 
 from . import AGENT
 
 
 class SubmissionPreflightTests(unittest.TestCase):
+    """Check the individual preflight helpers."""
+
     def test_runtime_version_matches_submission_manifest(self) -> None:
+        """Check that AGENT_VERSION in src/constants.py matches the version in agent.yaml.
+
+        A mismatch would make the reported version disagree with the packaged one.
+        """
         manifest = (AGENT / "agent.yaml").read_text(encoding="utf-8")
         self.assertIn(f'version: "{AGENT_VERSION}"', manifest)
 
     def test_local_package_is_separate_from_hosted_and_final_gates(self) -> None:
+        """Check that local and upload readiness do not depend on the Hosted Smoke result.
+
+        Full evaluation readiness must need both a passed Hosted Smoke and final confirmation.
+        """
         observed = {
             "submission_structure": True,
             "archive_matches_source": True,
@@ -43,12 +60,20 @@ class SubmissionPreflightTests(unittest.TestCase):
         self.assertTrue(_readiness_gates(observed)["full_evaluation_ready"])
 
     def test_mock_default_is_not_competition_model_configuration(self) -> None:
+        """Check that an empty environment, which falls back to the mock model, fails the checks.
+
+        The mock backend is for tests only and must never look ready for competition.
+        """
         checks = {item.name: item.passed for item in _model_checks({})}
         self.assertFalse(checks["real_model_backend"])
         self.assertFalse(checks["real_model_identifiers"])
         self.assertFalse(checks["model_base_url"])
 
     def test_remote_model_check_never_exposes_credential(self) -> None:
+        """Check that a full remote setup passes and the API key never shows in any message.
+
+        Preflight output is printed and saved, so it must not leak the bearer token.
+        """
         secret = "never-print-this-value"
         checks = _model_checks({
             "ARCHIMEDES_MODEL_BACKEND": "remote_openai_compatible",
@@ -61,6 +86,10 @@ class SubmissionPreflightTests(unittest.TestCase):
         self.assertNotIn(secret, "\n".join(item.message for item in checks))
 
     def test_latest_ready_result_uses_newest_result(self) -> None:
+        """Check that the most recently written result.json wins, even if it failed.
+
+        An older successful run must not hide a newer failure.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             old = root / "001" / "result.json"
@@ -76,6 +105,11 @@ class SubmissionPreflightTests(unittest.TestCase):
         self.assertEqual(payload, {"status": "failed"})
 
     def test_archive_freshness_ignores_member_order_but_not_content(self) -> None:
+        """Check that a ZIP with the same members in reverse order still counts as fresh.
+
+        Freshness compares each member's bytes and metadata with a fresh build of the
+        source, so member order alone must not make an archive look stale.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             agent = root / "agent"
@@ -106,6 +140,10 @@ class SubmissionPreflightTests(unittest.TestCase):
         self.assertIsNotNone(digest)
 
     def test_manual_qualification_must_match_current_archive_digest(self) -> None:
+        """Check that a recorded Hosted Smoke digest passes only if it matches the archive.
+
+        Letter case does not matter, but a different or malformed digest must fail.
+        """
         digest = "a" * 64
         self.assertTrue(
             _digest_attestation("hosted", digest.upper(), digest, "Hosted Smoke Test").passed

@@ -1,3 +1,5 @@
+"""Tests for dev/package_worktree_bundle.py, which zips the final worktrees of a replay."""
+
 from __future__ import annotations
 
 import json
@@ -10,7 +12,14 @@ from dev.package_worktree_bundle import create_bundle
 
 
 class WorktreeBundleTests(unittest.TestCase):
+    """Check the contents, determinism and input checks of create_bundle()."""
+
     def test_bundle_is_deterministic_and_contains_only_final_worktrees(self) -> None:
+        """Check that two bundles of one replay share a SHA-256 and leave out metadata.
+
+        Git, quilt (.pc) and Subversion files must be dropped, while ordinary
+        directories whose names merely mention GitHub are kept.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             replay = root / "replay"
@@ -65,6 +74,10 @@ class WorktreeBundleTests(unittest.TestCase):
             )
 
     def test_rejects_incomplete_replay(self) -> None:
+        """Check that a replay with a Case that did not complete is refused with ValueError.
+
+        Bundling a partial replay would hand over worktrees that never finished.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "replay-summary.json").write_text(

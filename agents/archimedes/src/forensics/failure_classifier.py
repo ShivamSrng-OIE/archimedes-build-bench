@@ -1,4 +1,8 @@
-"""Deterministic multi-label build failure classification."""
+"""Classify a build failure into a primary failure family plus secondary families.
+
+``_SIGNALS`` lists regular expressions per family. Its order is the priority order:
+when several families match, the earlier one becomes the primary label.
+"""
 
 from __future__ import annotations
 
@@ -22,13 +26,30 @@ _SIGNALS: tuple[tuple[FailureFamily, tuple[str, ...]], ...] = (
 def classify_failure(
     diagnostic: str, normalized_log: str = ""
 ) -> tuple[FailureFamily, list[FailureFamily], str]:
-    """Classify with primary/secondary labels, prioritizing the causal diagnostic."""
+    """Classify a failure, giving families seen in the diagnostic line priority.
+
+    A family is "direct" when one of its patterns matches the diagnostic itself, and
+    "context" when it matches only the wider log text. Direct families come first,
+    each group in ``_SIGNALS`` order, so a generic ``error:`` elsewhere in the log
+    cannot outrank what the causal line says. The caller is expected to strip noise
+    lines from ``normalized_log`` first so they cannot lend a family.
+
+    Args:
+        diagnostic: The primary diagnostic line.
+        normalized_log: Context text around the diagnostic. Empty means only the
+            diagnostic is used.
+
+    Returns:
+        A tuple of the primary family (``FailureFamily.UNKNOWN`` when nothing
+        matched), the remaining matched families in priority order, and a short
+        rationale string.
+    """
     direct: list[FailureFamily] = []
     context: list[FailureFamily] = []
     for family, patterns in _SIGNALS:
-        if any(re.search(pattern, diagnostic, re.I) for pattern in patterns):
+        if any(re.search(pattern, diagnostic, re.IGNORECASE) for pattern in patterns):
             direct.append(family)
-        elif any(re.search(pattern, normalized_log, re.I) for pattern in patterns):
+        elif any(re.search(pattern, normalized_log, re.IGNORECASE) for pattern in patterns):
             context.append(family)
     labels = direct + [family for family in context if family not in direct]
     primary = labels[0] if labels else FailureFamily.UNKNOWN

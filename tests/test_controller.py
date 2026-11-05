@@ -1,3 +1,9 @@
+"""End-to-end tests for ``RepairController`` on small offline workspaces.
+
+Each test builds a tiny package, runs the full controller with the mock model and no
+build feedback, and checks which files were changed and which output files were written.
+"""
+
 from __future__ import annotations
 
 import json
@@ -5,17 +11,23 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from .support import make_workspace, runtime_config
-
 from src.build.unavailable import UnavailableBuildFeedbackProvider
-from src.reasoning.controller import RepairController
 from src.config import FeatureFlags
+from src.reasoning.controller import RepairController
 from src.schemas import RepairFamily
 from src.workspace.paths import WorkspacePaths
 
+from .support import make_workspace, runtime_config
+
 
 class ControllerTests(unittest.TestCase):
+    """Tests for the whole repair flow, from Case loading to output files."""
+
     def test_official_task_contract_and_generic_abort_repair(self) -> None:
+        """Check that a Case given in the runner's ``task.json`` format, with an RPM spec that
+        echoes an error and exits on purpose, gets the abort removed and writes metrics and a trace
+        that starts at ``case_ingestion`` and ends at ``finalize``.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             task = json.dumps({
@@ -62,6 +74,10 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(trace_events[-1]["stage"], "finalize")
 
     def test_unconditional_abort_rule_is_generic_and_requires_log_evidence(self) -> None:
+        """Check that the abort rule only edits the script whose echoed message appears in the
+        failure log and leaves a similar script with a different message alone. The rule must follow
+        log evidence, not package or file names.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             metadata = json.dumps({
@@ -95,6 +111,10 @@ class ControllerTests(unittest.TestCase):
             self.assertIn("exit 2", other.read_text(encoding="utf-8"))
 
     def test_end_to_end_conditional_flag_repair(self) -> None:
+        """Check that ``-msse4.2`` failing on aarch64 is fixed by wrapping the flag in an ``ifneq``
+        test on ``$(CC) -dumpmachine`` instead of deleting it, and that one semantic anchor and all
+        output reports are recorded.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             metadata = json.dumps({
@@ -125,6 +145,9 @@ class ControllerTests(unittest.TestCase):
                 self.assertTrue((output / required).is_file())
 
     def test_semantic_anchor_ablation_changes_diagnostics_not_safe_rule(self) -> None:
+        """Check that turning off semantic anchors records zero anchors in the metrics and the
+        repair episode. The flag should change diagnostics only, not which rules may run.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             metadata = json.dumps({
@@ -148,6 +171,10 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(episode["semantic_anchors"], [])
 
     def test_ambiguous_atomic_failure_gathers_hypotheses_without_blind_patch(self) -> None:
+        """Check that an undefined ``__atomic_compare_exchange_16`` with no clear cause produces
+        three hypotheses and one probe but no edit. The agent should not guess a patch when the
+        evidence fits several fixes.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             metadata = json.dumps({
@@ -170,6 +197,9 @@ class ControllerTests(unittest.TestCase):
             self.assertEqual(outcome.metrics.probe_count, 1)
 
     def test_low_familiarity_unknown_target_does_not_invent_patch(self) -> None:
+        """Check that an unknown target architecture gets a familiarity score under 0.60, no edit,
+        and no confirmed claim that rests only on model inference.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             metadata = json.dumps({

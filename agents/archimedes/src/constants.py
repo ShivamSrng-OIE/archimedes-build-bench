@@ -1,4 +1,8 @@
-"""Central policy constants used by Archimedes decision components."""
+"""Fixed values shared across the Agent: versions, size limits and decision weights.
+
+``RELIABILITY`` gives the trust placed in each evidence source during confidence
+fusion, and ``CANDIDATE_WEIGHTS`` gives the weight of each ranking component.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+"""Tests for the repository inventory and the delta graph that links failures to hazards."""
+
 from __future__ import annotations
 
 import tempfile
@@ -19,7 +21,10 @@ from src.schemas import (
 
 
 class GraphContextTests(unittest.TestCase):
+    """Tests for finding build files and tracing failures to hazards."""
+
     def test_inventory_finds_build_files(self) -> None:
+        """Check that the inventory lists a top-level ``Makefile`` as a build file."""
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
             (repo / "src").mkdir()
@@ -29,6 +34,7 @@ class GraphContextTests(unittest.TestCase):
             self.assertIn("Makefile", inventory.build_files)
 
     def test_debian_rules_are_build_and_packaging_context(self) -> None:
+        """Check that ``debian/rules`` is listed both as a build file and as a packaging file."""
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
             (repo / "debian").mkdir()
@@ -38,6 +44,9 @@ class GraphContextTests(unittest.TestCase):
             self.assertIn("debian/rules", inventory.packaging_files)
 
     def test_inventory_file_limit_is_enforced_during_traversal(self) -> None:
+        """Check that ``max_files`` stops the walk once the limit is reached, keeping the first
+        files in sorted order.
+        """
         with tempfile.TemporaryDirectory() as name:
             repo = Path(name)
             for index in range(5):
@@ -46,6 +55,9 @@ class GraphContextTests(unittest.TestCase):
             self.assertEqual(inventory.files, ["file-0.txt", "file-1.txt"])
 
     def test_delta_graph_traces_matching_hazard(self) -> None:
+        """Check that the delta graph links a failure about ``-msse4.2`` to the hazard for that flag
+        in the Makefile.
+        """
         identity = ArchitectureIdentity(Architecture.AARCH64, "aarch64", ["aarch64"])
         source = ArchitectureIdentity(Architecture.X86_64, "x86_64", ["x86_64"])
         case = CaseData("case", source, identity, "")

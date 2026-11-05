@@ -1,4 +1,8 @@
-"""Bounded local execution traces with no network or runtime dependencies."""
+"""The execution trace: a capped JSON Lines record of what the controller did.
+
+Every value is redacted and truncated before it is written, and nothing is sent
+over the network.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,6 @@ from pathlib import Path
 from .logging_utils import redact_secrets
 from .schemas import JSONValue
 
-
 _SENSITIVE_KEYS = ("api_key", "apikey", "authorization", "credential", "password", "secret", "token")
 _SAFE_TOKEN_TELEMETRY_KEYS = {
     "input_tokens",
@@ -25,6 +28,18 @@ _SAFE_TOKEN_TELEMETRY_KEYS = {
 
 
 def _safe_value(value: object) -> JSONValue:
+    """Turn any value into a small, redacted JSON value for the trace.
+
+    Strings are redacted and cut to 1,000 characters, lists and dictionaries
+    keep their first 50 items, non-finite floats become strings, and other
+    objects are converted with ``str``.
+
+    Args:
+        value: The value to make safe.
+
+    Returns:
+        A JSON-compatible, size-bounded copy of the value.
+    """
     if value is None or isinstance(value, (bool, int)):
         return value
     if isinstance(value, float):
@@ -39,6 +54,19 @@ def _safe_value(value: object) -> JSONValue:
 
 
 def _safe_attribute(key: object, value: object) -> tuple[str, JSONValue]:
+    """Make one trace attribute safe, hiding values whose key looks sensitive.
+
+    A key containing ``token``, ``secret``, ``password`` and similar words has
+    its value replaced with ``[REDACTED]``. Token-count keys such as
+    ``input_tokens`` are exempt, because they hold usage numbers, not secrets.
+
+    Args:
+        key: The attribute name; cut to 100 characters.
+        value: The attribute value.
+
+    Returns:
+        The safe key and its safe or redacted value.
+    """
     safe_key = str(key)[:100]
     normalized_key = safe_key.lower()
     if (
@@ -51,10 +79,19 @@ def _safe_attribute(key: object, value: object) -> tuple[str, JSONValue]:
 
 @dataclass(slots=True)
 class TraceRecorder:
-    """Record a deterministic event sequence plus monotonic development timing.
+    """Append controller events to ``execution-trace.jsonl`` and mirror them to the log.
 
-    Trace events never contain raw source, logs, prompts, model responses, or credentials. Each
-    event is appended as one JSON object so a partially completed run remains inspectable.
+    Callers pass only summaries, never raw source, logs, prompts, model
+    responses or credentials, and every attribute is redacted again here. Each
+    event is appended as one JSON line, so the trace of a run that stops
+    halfway can still be read.
+
+    Attributes:
+        path: File the events are written to; emptied at creation when enabled.
+        case_id: The Case identifier, also used to derive ``trace_id``.
+        enabled: Whether any events are recorded.
+        max_events: Most events written; later ones are dropped. At least 1.
+        logger: Logger that receives a copy of each event.
     """
 
     path: Path
@@ -67,17 +104,40 @@ class TraceRecorder:
     _previous_stage: str | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
+        """Clamp ``max_events`` to at least 1 and start an empty trace file.
+
+        Returns:
+            None.
+        """
         self.max_events = max(1, self.max_events)
         if self.enabled:
             self.path.write_text("", encoding="utf-8")
 
     @property
     def trace_id(self) -> str:
+        """Return a stable trace identifier derived from the Case ID.
+
+        Returns:
+            ``trace-`` followed by the first 16 hex digits of the SHA-256 of
+            ``case_id``.
+        """
         digest = hashlib.sha256(self.case_id.encode("utf-8", errors="replace")).hexdigest()
         return f"trace-{digest[:16]}"
 
     def record(self, stage: str, action: str, **attributes: object) -> None:
-        """Append one safe event and mirror it to the captured agent log."""
+        """Append one redacted event to the trace file and copy it to the log.
+
+        Nothing is written when tracing is off or ``max_events`` has been
+        reached.
+
+        Args:
+            stage: Controller stage the event belongs to.
+            action: What happened, such as ``candidate_applied``.
+            **attributes: Extra event details; redacted and size-limited.
+
+        Returns:
+            None.
+        """
         if not self.enabled or self._sequence >= self.max_events:
             return
         self._sequence += 1
@@ -97,6 +157,15 @@ class TraceRecorder:
         self.logger.info("[trace] %s", encoded)
 
     def transition(self, stage: str, **attributes: object) -> None:
+        """Record that the controller moved to a new stage.
+
+        Args:
+            stage: The stage being entered.
+            **attributes: Extra details about the transition.
+
+        Returns:
+            None.
+        """
         previous = self._previous_stage
         self.record(stage, "state_transition", previous_stage=previous, **attributes)
         self._previous_stage = stage

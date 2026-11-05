@@ -1,9 +1,13 @@
-"""Environment-only runtime configuration with centralized feature switches."""
+"""Runtime settings read from environment variables, plus the ablation feature flags.
+
+Everything is parsed and validated once at startup into a frozen ``RuntimeConfig``.
+No ``.env`` file is ever read, so no secret can be picked up from the package.
+"""
 
 from __future__ import annotations
 
-import os
 import math
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -14,6 +18,14 @@ from .errors import ConfigurationError
 
 
 class ModelBackend(str, Enum):
+    """Which language-model endpoint the Agent talks to.
+
+    ``MOCK`` means no model at all (the router is ``None``). The two
+    development backends use ``ARCHIMEDES_MODEL_BASE_URL``; the local one only
+    accepts a loopback address. ``HOSTED_OPENAI_COMPATIBLE`` is chosen
+    automatically whenever any ``BB_MODEL_*`` variable is set by the organizer.
+    """
+
     MOCK = "mock"
     LOCAL_OPENAI_COMPATIBLE = "local_openai_compatible"
     REMOTE_OPENAI_COMPATIBLE = "remote_openai_compatible"
@@ -21,17 +33,45 @@ class ModelBackend(str, Enum):
 
 
 class ContextMode(str, Enum):
+    """How much build-log text goes into the failure-analysis prompt.
+
+    ``ARCHIMEDES_SELECTED_CONTEXT`` sends only the selected diagnostic and causal
+    excerpt. ``RAW_CONTEXT`` also appends up to 32,000 characters of the
+    normalised log, for comparison experiments.
+    """
+
     RAW_CONTEXT = "raw_context"
     ARCHIMEDES_SELECTED_CONTEXT = "archimedes_selected_context"
 
 
 class ModelTierMode(str, Enum):
+    """Which model tier the router may use.
+
+    ``AUTO`` uses the FAST tier for each call unless that call's escalation
+    signals ask for STRONG; ``FAST`` and ``STRONG`` pin every call to one tier.
+    """
+
     AUTO = "auto"
     FAST = "fast"
     STRONG = "strong"
 
 
 def _bool(name: str, default: bool) -> bool:
+    """Read a boolean environment variable.
+
+    Accepts ``1``/``true``/``yes``/``on`` and ``0``/``false``/``no``/``off``,
+    ignoring case and surrounding spaces.
+
+    Args:
+        name: Environment variable to read.
+        default: Value used when the variable is not set.
+
+    Returns:
+        The parsed value, or ``default`` when the variable is unset.
+
+    Raises:
+        ConfigurationError: If the variable is set to anything else.
+    """
     value = os.getenv(name)
     if value is None:
         return default
@@ -44,6 +84,20 @@ def _bool(name: str, default: bool) -> bool:
 
 
 def _int(name: str, default: int, minimum: int = 0) -> int:
+    """Read an integer environment variable with a lower bound.
+
+    Args:
+        name: Environment variable to read.
+        default: Value used when the variable is not set.
+        minimum: Smallest accepted value.
+
+    Returns:
+        The parsed value, or ``default`` when the variable is unset.
+
+    Raises:
+        ConfigurationError: If the value is not an integer or is below
+            ``minimum``.
+    """
     try:
         value = int(os.getenv(name, str(default)))
     except ValueError as exc:
@@ -54,6 +108,20 @@ def _int(name: str, default: int, minimum: int = 0) -> int:
 
 
 def _float(name: str, default: float, minimum: float = 0.0) -> float:
+    """Read a finite floating-point environment variable with a lower bound.
+
+    Args:
+        name: Environment variable to read.
+        default: Value used when the variable is not set.
+        minimum: Smallest accepted value.
+
+    Returns:
+        The parsed value, or ``default`` when the variable is unset.
+
+    Raises:
+        ConfigurationError: If the value is not a number, is infinite or NaN,
+            or is below ``minimum``.
+    """
     try:
         value = float(os.getenv(name, str(default)))
     except ValueError as exc:
@@ -66,6 +134,19 @@ def _float(name: str, default: float, minimum: float = 0.0) -> float:
 
 
 def _optional_float(name: str, minimum: float = 0.0) -> float | None:
+    """Read a floating-point environment variable that may be left unset.
+
+    Args:
+        name: Environment variable to read.
+        minimum: Smallest accepted value.
+
+    Returns:
+        The parsed value, or ``None`` when the variable is unset or blank.
+
+    Raises:
+        ConfigurationError: If the value is not a number, is infinite or NaN,
+            or is below ``minimum``.
+    """
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return None
@@ -81,6 +162,24 @@ def _optional_float(name: str, minimum: float = 0.0) -> float | None:
 
 
 def _validated_base_url(raw: str, backend: ModelBackend) -> str:
+    """Check a model endpoint URL and return it without a trailing slash.
+
+    The URL must be plain HTTP(S) with a host and a valid port, and must not
+    carry whitespace, control characters, user credentials, a query string or a
+    fragment, so a secret can never travel inside it. The local backend also
+    requires a loopback host (``127.0.0.1``, ``localhost`` or ``::1``).
+
+    Args:
+        raw: The URL as read from the environment.
+        backend: The selected backend, which decides whether loopback is
+            required.
+
+    Returns:
+        The stripped URL with any trailing ``/`` removed.
+
+    Raises:
+        ConfigurationError: If any of the checks above fails.
+    """
     value = raw.strip().rstrip("/")
     if any(
         character.isspace() or ord(character) < 32 or ord(character) == 127
@@ -91,6 +190,7 @@ def _validated_base_url(raw: str, backend: ModelBackend) -> str:
         )
     parsed = urlsplit(value)
     try:
+        # urlsplit only validates the port lazily, when .port is read.
         parsed.port
     except ValueError as exc:
         raise ConfigurationError(
@@ -118,6 +218,29 @@ def _validated_base_url(raw: str, backend: ModelBackend) -> str:
 
 @dataclass(frozen=True, slots=True)
 class FeatureFlags:
+    """Switches that turn single Agent components off for ablation experiments.
+
+    Each flag is read from an ``ENABLE_*`` environment variable and defaults to
+    true; the hosted evaluation runs with all of them on.
+
+    Attributes:
+        deterministic_forensics: ``ENABLE_DETERMINISTIC_FORENSICS``. Runs the
+            static architecture hazard scan; when off, the hazard list is empty.
+        claim_confidence: ``ENABLE_CLAIM_CONFIDENCE``. Applies the
+            consequence-aware confidence gate before flag and model repairs.
+        architecture_discovery: ``ENABLE_ARCHITECTURE_DISCOVERY``. Fills in
+            target facts from static evidence when familiarity is low.
+        delta_graph: ``ENABLE_DELTA_GRAPH``. Builds the causal delta graph.
+        semantic_anchors: ``ENABLE_SEMANTIC_ANCHORS``. Extracts semantic
+            anchors and requires a valid one before a flag-removal repair.
+        active_probes: ``ENABLE_ACTIVE_PROBES``. Runs the one-off repository
+            search probe for atomic-symbol failures.
+        repair_rules: ``ENABLE_REPAIR_RULES``. Tries the deterministic repair
+            rules before any other candidate source.
+        failure_frontier: ``ENABLE_FAILURE_FRONTIER``. Compares build feedback
+            by frontier stage; when off, only error signatures are compared.
+    """
+
     deterministic_forensics: bool = True
     claim_confidence: bool = True
     architecture_discovery: bool = True
@@ -130,6 +253,58 @@ class FeatureFlags:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
+    """All runtime settings for one run, validated and frozen.
+
+    Attributes:
+        workspace_root: ``BB_WORKSPACE``; the workspace root, default
+            ``/workspace``.
+        model_backend: ``ARCHIMEDES_MODEL_BACKEND`` (default ``mock``), or the
+            hosted backend whenever a ``BB_MODEL_*`` variable is present.
+        model_base_url: ``BB_MODEL_BASE_URL`` in hosted mode, which must end in
+            ``/v1``; otherwise ``ARCHIMEDES_MODEL_BASE_URL``, default
+            ``http://127.0.0.1:11434/v1``.
+        model_api_key: Bearer token. In hosted mode it is read from the file
+            named by ``BB_MODEL_TOKEN_FILE``; otherwise it comes from
+            ``ARCHIMEDES_MODEL_API_KEY``. Excluded from ``repr``.
+        fast_model: Model for the FAST tier. In hosted mode this is
+            ``BB_MODEL_NAME``; otherwise ``ARCHIMEDES_FAST_MODEL``, default
+            ``mock-fast``.
+        strong_model: Model for the STRONG tier. In hosted mode this is also
+            ``BB_MODEL_NAME``; otherwise ``ARCHIMEDES_STRONG_MODEL``, default
+            ``mock-strong``.
+        model_tier_mode: ``ARCHIMEDES_MODEL_TIER``; ``auto``, ``fast`` or
+            ``strong``, default ``auto``.
+        model_timeout_seconds: ``ARCHIMEDES_MODEL_TIMEOUT_SECONDS``; timeout
+            per model request, default 620 in hosted mode and 30 otherwise,
+            minimum 0.1.
+        max_total_model_calls: ``ARCHIMEDES_MAX_TOTAL_MODEL_CALLS``; most model
+            calls in one run, default 12.
+        max_strong_calls: ``ARCHIMEDES_MAX_STRONG_CALLS``; most STRONG-tier
+            calls in one run, default 3.
+        max_total_tokens: ``ARCHIMEDES_MAX_TOTAL_TOKENS``; token budget for the
+            run, default 50,000.
+        max_estimated_cost_usd: ``ARCHIMEDES_MAX_ESTIMATED_COST_USD``; optional
+            cost ceiling, which needs both cost rates to be set.
+        input_cost_per_million: ``ARCHIMEDES_INPUT_COST_PER_MILLION``; price of
+            one million input tokens, or ``None`` when cost is unknown.
+        output_cost_per_million: ``ARCHIMEDES_OUTPUT_COST_PER_MILLION``; price
+            of one million output tokens. Must be set together with the input
+            rate.
+        max_repair_attempts: ``ARCHIMEDES_MAX_REPAIR_ATTEMPTS``; most candidates
+            applied in one run, default 3, minimum 1. Only matters when build
+            feedback is available.
+        log_level: ``ARCHIMEDES_LOG_LEVEL``; a standard logging level name,
+            default ``INFO``.
+        trace_enabled: ``ARCHIMEDES_ENABLE_LOCAL_TRACE``; whether
+            ``execution-trace.jsonl`` is written, default true.
+        trace_max_events: ``ARCHIMEDES_TRACE_MAX_EVENTS``; most trace events
+            kept, default 500, minimum 1.
+        context_mode: ``ARCHIMEDES_CONTEXT_MODE``; how much log text the
+            failure-analysis prompt gets, default
+            ``archimedes_selected_context``.
+        features: The ablation switches read from ``ENABLE_*`` variables.
+    """
+
     workspace_root: Path
     model_backend: ModelBackend
     model_base_url: str
@@ -145,18 +320,32 @@ class RuntimeConfig:
     input_cost_per_million: float | None
     output_cost_per_million: float | None
     max_repair_attempts: int
-    enable_external_knowledge: bool
     log_level: str
-    debug: bool
     trace_enabled: bool
     trace_max_events: int
     context_mode: ContextMode
-    random_seed: int
     features: FeatureFlags = field(default_factory=FeatureFlags)
 
     @classmethod
-    def from_environment(cls) -> "RuntimeConfig":
-        """Load configuration without reading or copying a secret-bearing .env file."""
+    def from_environment(cls) -> RuntimeConfig:
+        """Build the configuration from the process environment.
+
+        If any of ``BB_MODEL_BASE_URL``, ``BB_MODEL_NAME`` or
+        ``BB_MODEL_TOKEN_FILE`` is present, all three must be non-empty and the
+        hosted backend is used. The token file is read once (at most 4,096
+        characters) and the token is only kept in memory; it is never logged
+        or copied. Both tiers then use the organizer's model alias unchanged.
+
+        Returns:
+            The validated, frozen configuration.
+
+        Raises:
+            ConfigurationError: If the hosted variables are incomplete, the
+                token file cannot be read or is empty or too large, the base
+                URL is invalid, a value cannot be parsed or is out of range,
+                model names are empty for a real backend, or the cost settings
+                are inconsistent.
+        """
         hosted_names = ("BB_MODEL_BASE_URL", "BB_MODEL_NAME", "BB_MODEL_TOKEN_FILE")
         hosted_present = any(name in os.environ for name in hosted_names)
         if hosted_present and not all(os.getenv(name, "").strip() for name in hosted_names):
@@ -264,14 +453,9 @@ class RuntimeConfig:
             input_cost_per_million=input_rate,
             output_cost_per_million=output_rate,
             max_repair_attempts=_int("ARCHIMEDES_MAX_REPAIR_ATTEMPTS", 3, 1),
-            enable_external_knowledge=_bool(
-                "ARCHIMEDES_ENABLE_EXTERNAL_KNOWLEDGE", False
-            ),
             log_level=log_level,
-            debug=_bool("ARCHIMEDES_DEBUG", False),
             trace_enabled=_bool("ARCHIMEDES_ENABLE_LOCAL_TRACE", True),
             trace_max_events=_int("ARCHIMEDES_TRACE_MAX_EVENTS", 500, 1),
             context_mode=context_mode,
-            random_seed=_int("ARCHIMEDES_RANDOM_SEED", 0),
             features=features,
         )

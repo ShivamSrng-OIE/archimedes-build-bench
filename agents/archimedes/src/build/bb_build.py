@@ -1,4 +1,8 @@
-"""Capability-gated adapter for the platform-owned ``bb-build`` command."""
+"""Adapter for a platform-provided ``bb-build`` command, used only when the Case declares it.
+
+The command is run without arguments in the worktree, and its stdout must be a
+small protocol 0.1 JSON object.
+"""
 
 from __future__ import annotations
 
@@ -14,19 +18,44 @@ from ..forensics.log_parser import analyze_build_log
 from ..json_safety import reject_excessive_json_nesting
 from .feedback import BuildFeedbackResult
 
-
 _MAX_TASK_BYTES = 1_000_000
 _MAX_RESPONSE_BYTES = 64 * 1024
 _MAX_BUILD_TIMEOUT_SECONDS = 3_600
 
 
 def _reject_nonfinite_constant(value: str) -> None:
+    """Refuse ``NaN``, ``Infinity`` and ``-Infinity`` while decoding JSON.
+
+    Args:
+        value: The constant name the decoder found.
+
+    Returns:
+        Never returns.
+
+    Raises:
+        ValueError: Always.
+    """
     raise ValueError(f"non-finite JSON number is not allowed: {value}")
 
 
 def _strict_json_object(
     data: bytes, *, description: str, max_bytes: int = _MAX_RESPONSE_BYTES
 ) -> dict[str, Any]:
+    """Decode bytes that must hold a single JSON object.
+
+    Args:
+        data: The raw bytes.
+        description: What the bytes are, used in error messages.
+        max_bytes: Largest accepted size; 64 KiB by default.
+
+    Returns:
+        The decoded object.
+
+    Raises:
+        BuildFeedbackError: If the data is too large, is not UTF-8 JSON within
+            the nesting limit and free of non-finite numbers, or is not an
+            object.
+    """
     if len(data) > max_bytes:
         raise BuildFeedbackError(f"{description} exceeds the maximum allowed size")
     try:
@@ -46,6 +75,15 @@ def _strict_json_object(
 
 
 def _bounded_timeout() -> int:
+    """Work out how long to wait for one ``bb-build`` run.
+
+    ``BB_BUILD_GATEWAY_TIMEOUT_SECONDS`` (default 900) is clamped to 1..3,600
+    seconds, and 5 seconds are added so the gateway can time out and answer
+    before the Agent gives up on it.
+
+    Returns:
+        The subprocess timeout in seconds.
+    """
     raw = os.environ.get("BB_BUILD_GATEWAY_TIMEOUT_SECONDS", "900")
     try:
         value = int(raw)
@@ -56,11 +94,20 @@ def _bounded_timeout() -> int:
 
 @dataclass(slots=True)
 class BbBuildFeedbackProvider:
-    """Invoke only an explicitly declared and discovered platform capability.
+    """Build feedback through ``bb-build``, used only when both sides offer it.
 
-    The current public Starter Kit does not expose this command. This adapter stays
-    unavailable unless both the Case metadata and the executable independently
-    advertise the exact protocol-0.1 capability.
+    The current public Starter Kit does not provide this command. The provider
+    is available only when the executable is on ``PATH`` and the Case's
+    ``task.json`` declares the protocol 0.1 ``bb-build`` capability; ``main``
+    never creates it in hosted mode.
+
+    Attributes:
+        executable: Full path of the ``bb-build`` command.
+        repo_root: Worktree the command runs in.
+        request_limit: Most builds the Case allows; 0 when unavailable.
+        available: Whether builds may be requested.
+        reason_unavailable: Why builds are not available, or ``None``.
+        timeout_seconds: Time limit for one ``bb-build`` run.
     """
 
     executable: str
@@ -73,7 +120,23 @@ class BbBuildFeedbackProvider:
     @classmethod
     def discover(
         cls, *, executable: str, input_dir: Path, repo_root: Path
-    ) -> "BbBuildFeedbackProvider":
+    ) -> BbBuildFeedbackProvider:
+        """Create the provider, reading the capability from ``input/task.json``.
+
+        ``task.json`` must be a regular file inside ``input/`` (not a symlink),
+        at most 1,000,000 bytes, with ``schema_version`` ``0.1`` and a
+        ``build_feedback`` object whose ``command`` is ``bb-build`` and whose
+        ``attempt_limit`` is an integer from 1 to 100. Any problem leaves the
+        provider unavailable with the reason recorded; nothing is raised.
+
+        Args:
+            executable: Full path of the ``bb-build`` command.
+            input_dir: The workspace ``input/`` directory.
+            repo_root: The worktree root.
+
+        Returns:
+            The provider, available or not.
+        """
         reason = "Case metadata does not declare the bb-build protocol-0.1 capability"
         request_limit = 0
         task_path = input_dir / "task.json"
@@ -127,6 +190,27 @@ class BbBuildFeedbackProvider:
         )
 
     def request(self, *, expected_information_value: float) -> BuildFeedbackResult:
+        """Run ``bb-build`` once and turn its answer into a failure frontier.
+
+        Exit status 0 with ``ok`` true is a usable answer; exit status 1 is
+        accepted only to read the error from an ``ok`` false answer. The
+        returned log excerpt (or message, or status) is run through the same
+        log forensics as the original failure.
+
+        Args:
+            expected_information_value: How much the caller expects to learn;
+                accepted for interface compatibility and not used.
+
+        Returns:
+            Whether the build succeeded, the log text, its frontier and an
+            attempt-based request ID.
+
+        Raises:
+            BuildFeedbackError: If the provider is unavailable, the command
+                cannot run or times out, its output is not a valid protocol 0.1
+                answer, the service rejects the request, or the attempt fields
+                disagree with the declared limit.
+        """
         del expected_information_value
         if not self.available:
             raise BuildFeedbackError(

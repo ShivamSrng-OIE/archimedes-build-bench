@@ -1,4 +1,4 @@
-"""Central confidence fusion, caps, and consequence-aware decision policy."""
+"""Confidence fusion with source-dependent caps, and the confidence gate for patches."""
 
 from __future__ import annotations
 
@@ -17,6 +17,15 @@ _HEURISTIC_KINDS = {EvidenceKind.STATIC_ANALYSIS}
 
 
 def confidence_band(value: float) -> ConfidenceBand:
+    """Map a confidence value to its coarse band.
+
+    Args:
+        value: Confidence from 0 to 1.
+
+    Returns:
+        ``VERY_LOW`` below 0.20, ``LOW`` below 0.40, ``MODERATE`` below 0.70,
+        ``HIGH`` below 0.90, otherwise ``VERY_HIGH``.
+    """
     if value < 0.20:
         return ConfidenceBand.VERY_LOW
     if value < 0.40:
@@ -29,13 +38,38 @@ def confidence_band(value: float) -> ConfidenceBand:
 
 
 def _aggregate(items: list[EvidenceItem]) -> float:
+    """Combine evidence items as independent sources.
+
+    Args:
+        items: The evidence to combine.
+
+    Returns:
+        ``1 - product(1 - reliability * strength)``, or 0 for no items.
+    """
     return 1.0 - math.prod(1.0 - item.reliability * item.strength for item in items)
 
 
 def fuse_confidence(
     supporting: list[EvidenceItem], contradicting: list[EvidenceItem]
 ) -> tuple[float, ConfidenceBand, ClaimStatus]:
-    """Fuse independent evidence and impose non-negotiable source-dependent caps."""
+    """Turn supporting and contradicting evidence into a confidence and status.
+
+    The raw value is ``0.5 + 0.5 * (support - contradiction)``, clamped to
+    0.01..0.99. Support made only of model output is capped at 0.65, and
+    support made only of static analysis at 0.75, so neither can reach the
+    high-consequence threshold on its own.
+
+    Args:
+        supporting: Evidence for the claim.
+        contradicting: Evidence against the claim.
+
+    Returns:
+        The confidence, its band, and the status: ``CONTRADICTED`` when a
+        strong contradicting item exists and contradiction is at least as
+        large as support, ``CONFIRMED`` at 0.90 or more with non-model support
+        and no strong contradiction, ``SUPPORTED`` when there is any support,
+        otherwise ``OPEN``.
+    """
     support = _aggregate(supporting)
     contradiction = _aggregate(contradicting)
     raw = min(0.99, max(0.01, 0.5 + 0.5 * (support - contradiction)))
@@ -60,7 +94,18 @@ def fuse_confidence(
 def claim_justifies_patch(
     confidence: float, consequence: ConsequenceLevel, status: ClaimStatus
 ) -> bool:
-    """Operationalize confidence thresholds for repair-gating decisions."""
+    """Decide whether a claim is strong enough to justify a patch.
+
+    Args:
+        confidence: The claim's fused confidence.
+        consequence: How much damage acting on a wrong claim could do.
+        status: The claim's status.
+
+    Returns:
+        False for a contradicted claim. Otherwise True when the confidence
+        reaches 0.90 for critical claims, 0.80 for high-consequence claims, or
+        0.60 for low and medium ones.
+    """
     if status is ClaimStatus.CONTRADICTED:
         return False
     if consequence is ConsequenceLevel.CRITICAL:

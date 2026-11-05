@@ -1,4 +1,10 @@
-"""Evidence-oriented deterministic repair matches for common portability mechanisms."""
+"""Hand-written repair rules for common cross-architecture build failures.
+
+Each rule needs one specific signal in the normalized failure log, then looks for the
+unique repository text that causes it, and returns exact-text edits. When the evidence
+is missing or ambiguous (nothing found, or more than one place), a rule returns None
+instead of guessing. Rules never look at Case IDs or package names.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +18,16 @@ from ..workspace.repository_files import iter_repository_files
 
 @dataclass(frozen=True, slots=True)
 class DeterministicMatch:
+    """A repair produced by one of the hand-written rules.
+
+    Attributes:
+        family: The kind of repair, used by the critics and the candidate ranker.
+        rationale: A short explanation of the change, copied into each edit.
+        edits: The exact-text edits to apply, at most one per file.
+        confidence: How sure the rule is that the edit fixes the failure, from 0 to 1.
+        risk: How likely the edit is to cause harm elsewhere, from 0 to 1.
+    """
+
     family: RepairFamily
     rationale: str
     edits: tuple[PlannedEdit, ...]
@@ -20,6 +36,18 @@ class DeterministicMatch:
 
 
 def _text_files(repo: Path) -> list[tuple[str, str]]:
+    """Read every text file in the repository that the rules may search.
+
+    Files over 2,000,000 bytes, files with a NUL byte in the first 8 KiB, files that
+    are not valid UTF-8 and files that cannot be read are skipped.
+
+    Args:
+        repo: The root of the package worktree.
+
+    Returns:
+        Pairs of (repository-relative POSIX path, file text), in the deterministic
+        order produced by ``iter_repository_files``.
+    """
     files: list[tuple[str, str]] = []
     for path in iter_repository_files(repo):
         try:
@@ -39,6 +67,17 @@ def _text_files(repo: Path) -> list[tuple[str, str]]:
 
 
 def _edit(path: str, expected: str, replacement: str, rationale: str) -> PlannedEdit:
+    """Build a ``replace_lines`` edit that swaps one exact piece of text.
+
+    Args:
+        path: Repository-relative path of the file to change.
+        expected: The text that must occur exactly once in the file.
+        replacement: The text to put in its place.
+        rationale: Why the edit is made.
+
+    Returns:
+        The planned edit.
+    """
     return PlannedEdit(
         operation="replace_lines",
         path=path,
@@ -51,7 +90,31 @@ def _edit(path: str, expected: str, replacement: str, rationale: str) -> Planned
 def _unsigned_digest_identifier(
     files: list[tuple[str, str]], case: CaseData
 ) -> tuple[PlannedEdit, ...]:
-    """Propagate a generated digest from plain ``char`` to unsigned bytes."""
+    """Switch a generated digest array from plain ``char`` to ``unsigned char``.
+
+    This is a companion to the Debian multiarch rule and runs only after that rule
+    has seen a CMake ``find_package`` failure. On aarch64 and riscv64 plain ``char``
+    is unsigned, so the negative values a Python generator writes into a
+    ``static const char`` array no longer fit, and the C++ braced initializer fails
+    as a narrowing conversion. Once configuration is fixed, compilation would hit
+    exactly that.
+
+    The rule needs, across the whole repository, exactly one generator file holding
+    the ``digest_char = [e if e < 128 else e-256 ...]`` snippet, exactly one
+    ``StringRef NAME() { return ARRAY; }`` definition, exactly one file with the
+    ``llvm::StringRef NAME();`` declaration and exactly one line that is just
+    ``addString(H, NAME());``. It then makes four edits: the generator prints an
+    ``unsigned char`` array, the definition and declaration return
+    ``ArrayRef<unsigned char>``, and the consumer calls ``H.update(NAME());``.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        case: The Case, used for its source and target architectures.
+
+    Returns:
+        The four edits, or an empty tuple when the source is not x86_64, the target
+        is not aarch64 or riscv64, or any of the pieces is missing or not unique.
+    """
     if (
         case.source_architecture.canonical is not Architecture.X86_64
         or case.target_architecture.canonical
@@ -139,7 +202,35 @@ def _unsigned_digest_identifier(
 def _debian_multiarch_path(
     files: list[tuple[str, str]], log: str, case: CaseData
 ) -> DeterministicMatch | None:
-    """Replace one proven source-architecture GNU path in Debian packaging."""
+    """Replace a hard-coded source-architecture multiarch triplet in Debian packaging.
+
+    Log signal: either a ``cannot access``/``cannot stat`` or ``cannot find (any
+    matches for)`` message naming a path with the source triplet (for example
+    ``x86_64-linux-gnu``), or a CMake ``find_package`` "Could not find a package
+    configuration file" error together with a ``-D<NAME>_DIR=`` option in the log that
+    contains the source triplet.
+
+    If exactly one line of ``debian/rules`` contains the source triplet, the triplet
+    is replaced with ``$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)``. For the
+    CMake signal, the unsigned-digest companion edits are added when they match.
+
+    Otherwise the package must use debhelper compat 13 or later (read from
+    ``debhelper-compat (= N)`` in ``debian/control``, else from ``debian/compat``),
+    because only then do ``.install`` files expand ``${DEB_HOST_MULTIARCH}``. Every
+    ``debian/*.install`` line that contains the source triplet and whose text appears
+    verbatim in the log gets the triplet replaced with that variable.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+        case: The Case, used for its source and target architectures.
+
+    Returns:
+        The match, or None when the source and target are not x86_64 and aarch64 in
+        some order, the log has neither signal, or ``debian/rules`` has no unique
+        triplet line and the compat level is below 13 or no ``.install`` line is
+        quoted in the log.
+    """
     triplets = {
         Architecture.X86_64: "x86_64-linux-gnu",
         Architecture.AARCH64: "aarch64-linux-gnu",
@@ -153,17 +244,17 @@ def _debian_multiarch_path(
         rf"(?:no such file|not found)|cannot find \(any matches for\).*"
         rf"{re.escape(source_triplet)})",
         log,
-        re.I,
+        re.IGNORECASE,
     )
     missing_cmake_package = re.search(
         r"CMake Error at .*?\(find_package\):.*?Could not find a package "
         r"configuration file provided by",
         log,
-        re.I | re.S,
+        re.IGNORECASE | re.DOTALL,
     ) and re.search(
         rf"-D[A-Za-z0-9_]+_DIR=\S*{re.escape(source_triplet)}\S*",
         log,
-        re.I,
+        re.IGNORECASE,
     )
     if missing_path is None and missing_cmake_package is None:
         return None
@@ -204,7 +295,7 @@ def _debian_multiarch_path(
 
     file_map = dict(files)
     control = file_map.get("debian/control", "")
-    compat_match = re.search(r"debhelper-compat\s*\(=\s*(\d+)\s*\)", control, re.I)
+    compat_match = re.search(r"debhelper-compat\s*\(=\s*(\d+)\s*\)", control, re.IGNORECASE)
     compat = int(compat_match.group(1)) if compat_match else 0
     legacy_compat = file_map.get("debian/compat", "").strip()
     if not compat and legacy_compat.isdigit():
@@ -249,6 +340,12 @@ _DEBIAN_ARCH = {
     Architecture.AARCH64: "arm64",
     Architecture.RISCV64: "riscv64",
 }
+# dpkg-gensymbols prints a unified diff between the packaged symbols file and what the
+# build produced. Its header reads "--- debian/libfoo1.symbols (libfoo1_1.2-3_arm64)",
+# a vanished symbol is a "-" line, and the same symbol comes back as a
+# "+#MISSING: <version># <original line>" line. _SYMBOLS_LINE matches one symbol entry
+# with its optional "(tag|tag)" prefix. It requires leading whitespace, so library header
+# lines and the column-0 "|" and "*" lines never match, and it skips indented comments.
 _SYMBOLS_ERROR = re.compile(
     r"^dpkg-gensymbols: error: some symbols or patterns disappeared", re.MULTILINE
 )
@@ -263,7 +360,23 @@ _MAX_DISAPPEARED_FRACTION = 0.25
 
 
 def _exclude_symbol_arch(line: str, arch: str) -> str | None:
-    """Return ``line`` tagged so the symbol is not expected on ``arch``, or None."""
+    """Tag a symbols-file line so dpkg-gensymbols stops expecting it on one architecture.
+
+    A line without an ``arch=`` tag gets ``arch=!<arch>`` added to its tag list (for
+    example `` foo@Base 1.0`` becomes `` (arch=!arm64)foo@Base 1.0``). A negated list
+    such as ``arch=!armel`` gets ``!<arch>`` appended. A positive list such as
+    ``arch=amd64 arm64`` loses ``<arch>``.
+
+    Args:
+        line: The symbol line as it appears in the symbols file, without the newline.
+        arch: The Debian architecture name to exclude, such as ``arm64``.
+
+    Returns:
+        The tagged line, or None if the line is not a symbol entry, has more than one
+        ``arch=`` tag, mixes negated and positive values, already excludes ``arch``,
+        has a positive list that does not include ``arch``, or would be left with an
+        empty list.
+    """
     match = _SYMBOLS_LINE.match(line)
     if match is None:
         return None
@@ -294,6 +407,15 @@ def _exclude_symbol_arch(line: str, arch: str) -> str | None:
 
 
 def _only_target_arch(line: str, arch: str) -> bool:
+    """Check whether a symbol is declared for exactly one architecture, ``arch``.
+
+    Args:
+        line: The symbol line as it appears in the symbols file.
+        arch: The Debian architecture name, such as ``arm64``.
+
+    Returns:
+        True if the line's only ``arch=`` tag is exactly ``arch=<arch>``.
+    """
     match = _SYMBOLS_LINE.match(line)
     if match is None:
         return False
@@ -302,7 +424,22 @@ def _only_target_arch(line: str, arch: str) -> bool:
 
 
 def _disappeared_symbols(log: str) -> dict[str, tuple[str, dict[str, str]]]:
-    """Map each reported symbols file to (build arch, {disappeared line: #MISSING line})."""
+    """Collect the symbols that dpkg-gensymbols reported as disappeared.
+
+    Each diff starts at a ``--- debian/<pkg>.symbols (<pkg>_<version>_<arch>)`` header
+    followed by a ``+++ dpkg-gensymbols`` line and runs until a line that is not part
+    of a hunk. A removed line counts only when the diff also has the matching
+    ``+#MISSING:`` line for it. Diffs for the same file are merged.
+
+    Args:
+        log: The normalized failure log.
+
+    Returns:
+        A mapping from symbols-file path to a pair of (Debian build architecture,
+        {removed symbol line: dpkg's ``#MISSING:`` line}). It is empty when no diff was
+        found, or when the same file is reported for two different architectures,
+        since then it is unclear which one to exclude.
+    """
     reported: dict[str, tuple[str, dict[str, str]]] = {}
     lines = log.splitlines()
     index = 0
@@ -341,12 +478,32 @@ def _disappeared_symbols(log: str) -> dict[str, tuple[str, dict[str, str]]]:
 def _debian_symbols_arch(
     files: list[tuple[str, str]], log: str, case: CaseData
 ) -> DeterministicMatch | None:
-    """Exclude symbols that dpkg-gensymbols proved absent on the target architecture.
+    """Exclude the symbols that dpkg-gensymbols found missing on the target architecture.
 
-    The edit mirrors the Debian maintainer workflow for architecture-specific ABI: the
-    symbols that the target build reported as disappeared receive an ``arch=!<target>``
-    tag, so every other architecture keeps checking them. The rule fails closed unless
-    every reported symbol is found exactly once and can be tagged unambiguously.
+    Log signal: ``dpkg-gensymbols: error: some symbols or patterns disappeared``
+    followed by its diff. The edit follows what Debian maintainers do for
+    architecture-specific ABI: each reported symbol gets an ``arch=!<target>`` tag, or
+    loses the target from a positive ``arch=`` list, so every other architecture keeps
+    checking it. A symbol declared only for the target (``arch=<target>``) has no
+    architecture left, so its line is replaced with dpkg's own ``#MISSING:`` line.
+
+    Every reported symbols file must exist in the repository, the diff's architecture
+    must match the Debian name of the Case's target (when the target is known), and
+    each reported line must occur exactly once in its file, ignoring trailing
+    whitespace. All changes to one file are composed into a single edit spanning the
+    first to the last changed line, widened upwards until the expected text is unique,
+    because the executor allows one operation per file.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+        case: The Case, used for its target architecture.
+
+    Returns:
+        The match with one edit per symbols file, or None if any file fails a check.
+        The rule also refuses when more than 200 symbols, or more than 25% of a
+        file's symbol lines, disappeared, since that points to a broken library
+        rather than an architecture difference.
     """
     if _SYMBOLS_ERROR.search(log) is None:
         return None
@@ -422,7 +579,24 @@ def _debian_symbols_arch(
 def _unconditional_build_abort(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
-    """Remove one unconditional build-script abort whose own message is in the failure log."""
+    """Remove an unconditional ``echo ... >&2; exit N`` abort whose message is in the log.
+
+    Log signal: the quoted message (8 to 300 characters) of an ``echo "message" >&2``
+    line that is directly followed by ``exit N`` (N of 1 or more) at the same
+    indentation. Only ``.spec``, ``.sh`` and ``.mk`` files and files named
+    ``Makefile`` are searched, and the message is compared case-insensitively.
+
+    The two lines are replaced with a single comment at the same indentation. This is
+    the repair for the Hosted Smoke ``hello`` Case.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None unless exactly one such abort in the repository has its
+        message in the log.
+    """
     pattern = re.compile(
         r"(?m)^(?P<indent>[ \t]*)echo[ \t]+"
         r"(?P<message>\"[^\"\r\n]{8,300}\"|'[^'\r\n]{8,300}')[ \t]+>&2[ \t]*\r?\n"
@@ -458,7 +632,23 @@ def _unconditional_build_abort(
 def _cmake_feature_check(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
-    flag_match = re.search(r"-(?:mavx\d*|msse\d*(?:\.\d)?)", log, re.I)
+    """Enable an x86 SIMD flag in CMake only when the compiler accepts it.
+
+    Log signal: an ``-mavx...`` or ``-msse...`` flag anywhere in the log plus the
+    phrase "does not support". The first flag found is used. Exactly one line across
+    all ``CMakeLists.txt`` and ``*.cmake`` files must contain that flag. The line is
+    wrapped in ``include(CheckCCompilerFlag)``, a ``check_c_compiler_flag`` call that
+    sets ``ARCHIMEDES_COMPILER_SUPPORTS_<FLAG>``, and an ``if()``/``endif()`` block.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal is missing or the flag appears on zero or
+        several CMake lines.
+    """
+    flag_match = re.search(r"-(?:mavx\d*|msse\d*(?:\.\d)?)", log, re.IGNORECASE)
     if flag_match is None or "does not support" not in log.lower():
         return None
     flag = flag_match.group(0)
@@ -491,7 +681,26 @@ def _cmake_feature_check(
 def _autoconf_rejected_x86_flags(
     files: list[tuple[str, str]], log: str, case: CaseData
 ) -> DeterministicMatch | None:
-    """Remove a unique set of x86-only flags explicitly rejected by a non-x86 compiler."""
+    """Remove x86-only flags that the target compiler rejected from ``configure.ac``.
+
+    Log signal: one or more ``unrecognized command-line option '-msse...'`` messages
+    (also ``-mssse3``, ``-mavx...`` and ``-mfpmath=sse``, with any quote style). Only
+    applies when the source is x86_64 and the target is aarch64 or riscv64. Exactly
+    one line in a file named ``configure.ac`` must contain every rejected flag as a
+    whitespace-separated word. Those flags are removed from that line, its
+    indentation is kept and leftover runs of spaces are collapsed; the other flags on
+    the line stay.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+        case: The Case, used for its source and target architectures.
+
+    Returns:
+        The match, or None when the architectures do not fit, no flag was rejected,
+        no single ``configure.ac`` line holds all of them, or removing them changes
+        nothing.
+    """
     if (
         case.source_architecture.canonical is not Architecture.X86_64
         or case.target_architecture.canonical
@@ -506,7 +715,7 @@ def _autoconf_rejected_x86_flags(
             r"(?P<flag>-(?:m(?:sse\d*(?:\.\d)?|ssse3|avx\d*|fpmath=sse)))"
             r"[\"'‘’]",
             log,
-            re.I,
+            re.IGNORECASE,
         )
     }
     if not rejected:
@@ -550,8 +759,26 @@ def _autoconf_rejected_x86_flags(
 def _cmake_portable_source(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Build an existing generic source file instead of the x86 one on other targets.
+
+    Log signal: ``x86intrin.h`` or ``immintrin.h`` followed, anywhere later in the
+    log, by "no such file" or "not found". Exactly one ``add_library(<lib> <src>)``
+    line in a ``CMakeLists.txt`` must name a source containing ``optimized`` whose
+    sibling, with ``optimized`` replaced by ``generic``, exists next to that
+    ``CMakeLists.txt``. The line becomes an ``if(CMAKE_SYSTEM_PROCESSOR MATCHES ...)``
+    block that keeps the optimized source on x86_64 and uses the generic one
+    elsewhere.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal is missing or there is not exactly one
+        such ``add_library`` line.
+    """
     if not re.search(
-        r"(?:x86intrin|immintrin)\.h.*(?:no such file|not found)", log, re.I | re.S
+        r"(?:x86intrin|immintrin)\.h.*(?:no such file|not found)", log, re.IGNORECASE | re.DOTALL
     ):
         return None
     file_map = dict(files)
@@ -560,7 +787,7 @@ def _cmake_portable_source(
         if not path.lower().endswith("cmakelists.txt"):
             continue
         for match in re.finditer(
-            r"^add_library\((\S+)\s+([^\s()]*optimized[^\s()]*)\)\s*$", text, re.M
+            r"^add_library\((\S+)\s+([^\s()]*optimized[^\s()]*)\)\s*$", text, re.MULTILINE
         ):
             library, optimized = match.groups()
             parent = Path(path).parent.as_posix()
@@ -595,6 +822,23 @@ def _cmake_portable_source(
 def _atomic_linkage(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Link ``-latomic`` when the linker cannot find ``__atomic`` builtins.
+
+    Log signal: ``undefined reference to `__atomic`` (with a backtick or a straight
+    quote). Some repository file must mention ``__atomic``. Among files named
+    ``Makefile`` that do not already use ``-latomic``, there must be exactly one
+    recipe line (starting with a tab) that calls ``$(CC)``; ``-latomic`` is appended
+    to it. On some non-x86 targets GCC turns certain atomic operations (for example
+    16-byte ones on aarch64) into libatomic calls that x86_64 builds never needed.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal or the ``__atomic`` usage is missing, or
+        there is not exactly one candidate recipe line.
+    """
     if (
         "undefined reference to `__atomic" not in log
         and "undefined reference to '__atomic" not in log
@@ -629,6 +873,23 @@ def _atomic_linkage(
 
 
 def _rpm_condition(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
+    """Drop an ``%ifarch x86_64`` condition that keeps a spec section off the target.
+
+    Two signals are handled. If the log says ``Installed (but unpackaged)``, a
+    ``.spec`` file with exactly one ``%ifarch x86_64`` block around a ``%files``
+    section is unwrapped so the file list applies on every architecture. Otherwise,
+    if the log has ``fatal error: <name>.h: No such file``, a ``.spec`` file with
+    exactly one ``%ifarch x86_64`` block around a single ``BuildRequires:`` line is
+    unwrapped so the dependency is installed on the target too. The rule does not
+    check that the package actually provides the missing header.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None unless exactly one spec file matches the chosen signal.
+    """
     installed_matches: list[tuple[str, str, str]] = []
     dependency_matches: list[tuple[str, str, str, str]] = []
     for path, text in files:
@@ -636,15 +897,15 @@ def _rpm_condition(files: list[tuple[str, str]], log: str) -> DeterministicMatch
             continue
         if "installed (but unpackaged)" in log.lower():
             match = re.search(
-                r"%ifarch\s+x86_64\s*\n(%files\s*\n[^%]+?)%endif", text, re.I
+                r"%ifarch\s+x86_64\s*\n(%files\s*\n[^%]+?)%endif", text, re.IGNORECASE
             )
             if match and text.count(match.group(0)) == 1:
                 installed_matches.append(
                     (path, match.group(0), match.group(1).rstrip())
                 )
-        missing = re.search(r"fatal error:\s*([^:\s]+\.h):\s*no such file", log, re.I)
+        missing = re.search(r"fatal error:\s*([^:\s]+\.h):\s*no such file", log, re.IGNORECASE)
         block = re.search(
-            r"%ifarch\s+x86_64\s*\n(BuildRequires:\s*[^\n]+)\s*\n%endif", text, re.I
+            r"%ifarch\s+x86_64\s*\n(BuildRequires:\s*[^\n]+)\s*\n%endif", text, re.IGNORECASE
         )
         if missing and block and text.count(block.group(0)) == 1:
             dependency_matches.append(
@@ -674,7 +935,22 @@ def _rpm_condition(files: list[tuple[str, str]], log: str) -> DeterministicMatch
 
 
 def _artifact_path(files: list[tuple[str, str]], log: str) -> DeterministicMatch | None:
-    expected_path = re.search(r"expected artifact missing at\s+(\S+)", log, re.I)
+    """Change a Makefile install path from ``/usr/lib64/`` to ``/usr/lib/``.
+
+    Log signal: ``expected artifact missing at <path>`` where the path sits directly
+    in ``/usr/lib/``. Exactly one line across all files named ``Makefile`` must
+    contain ``/usr/lib64/``; that prefix is replaced on that line. The rule does not
+    check that the line installs the same file name.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal is missing, the path is not directly in
+        ``/usr/lib/``, or there is not exactly one ``/usr/lib64/`` Makefile line.
+    """
+    expected_path = re.search(r"expected artifact missing at\s+(\S+)", log, re.IGNORECASE)
     if expected_path is None:
         return None
     required = expected_path.group(1)
@@ -704,6 +980,19 @@ def _artifact_path(files: list[tuple[str, str]], log: str) -> DeterministicMatch
 def _generated_config(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Guard a generated ``GENERATED_FOR_X86_64`` define with ``__x86_64__``.
+
+    Log signal: "generated architecture mismatch". Exactly one
+    ``#define GENERATED_FOR_X86_64 1`` line must exist in the repository. It is
+    wrapped in ``#if defined(__x86_64__)`` and ``#endif``.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal is missing or the define is not unique.
+    """
     if "generated architecture mismatch" not in log.lower():
         return None
     matches: list[tuple[str, str]] = []
@@ -711,7 +1000,7 @@ def _generated_config(
         matches.extend(
             (path, match)
             for match in re.findall(
-                r"^#define\s+GENERATED_FOR_X86_64\s+1\s*$", text, re.M
+                r"^#define\s+GENERATED_FOR_X86_64\s+1\s*$", text, re.MULTILINE
             )
         )
     if len(matches) != 1:
@@ -731,6 +1020,20 @@ def _generated_config(
 def _architecture_guard(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Replace an ``#error`` for non-x86 targets with a pointer-width calculation.
+
+    Log signal: "unsupported architecture selection". Exactly one block of the form
+    ``#if defined(__x86_64__)`` / ``int NAME(void) { return 64; }`` / ``#else`` /
+    ``#error unsupported architecture selection`` / ``#endif`` must exist. The
+    ``#error`` branch becomes ``int NAME(void) { return (int)(sizeof(void *) * 8); }``.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal is missing or the block is not unique.
+    """
     if "unsupported architecture selection" not in log.lower():
         return None
     pattern = re.compile(
@@ -765,14 +1068,33 @@ def _architecture_guard(
 def _source_fallback(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Fall back to an existing ``<name>_generic.c`` when an x86 source fails to compile.
+
+    Log signal: ``immintrin.h`` or ``x86intrin.h``, ``intrinsic _mm_...``, or
+    ``unrecognized opcode `pause``. The first log line that starts with
+    ``<path>.c:`` names the failing file; that path must be a repository file with a
+    ``<stem>_generic.c`` sibling, and both must contain an ``int``, ``unsigned`` or
+    ``void`` function. The whole failing file is replaced with an
+    ``#if defined(__x86_64__) || defined(__i386__)`` block that keeps the original
+    code for x86 and uses the generic code elsewhere, with the generic function's
+    first occurrence renamed to the original function's name.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal, the failing file, the generic sibling or
+        a function definition in either file is missing.
+    """
     if not re.search(
         r"(?:immintrin|x86intrin)\.h|intrinsic\s+_mm_|unrecognized opcode\s+[`']pause",
         log,
-        re.I,
+        re.IGNORECASE,
     ):
         return None
     file_map = dict(files)
-    diagnostic_path = re.search(r"^([^:\n]+\.c):(?:\d+|\s)", log, re.M)
+    diagnostic_path = re.search(r"^([^:\n]+\.c):(?:\d+|\s)", log, re.MULTILINE)
     if diagnostic_path is None:
         return None
     path = diagnostic_path.group(1).replace("\\", "/")
@@ -818,6 +1140,25 @@ def _source_fallback(
 def _portable_abi_or_bytes(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Fix byte-order or pointer-width assumptions that fail on the target.
+
+    For "network-order bytes differ", exactly one function of the form
+    ``void NAME(unsigned VALUE, unsigned char OUT[4]) { *(unsigned *)OUT = VALUE; }``
+    must exist; its body is replaced with four explicit big-endian byte stores, so
+    the result no longer depends on host endianness. For "pointer width must be
+    eight", exactly one ``_Static_assert(sizeof(void *) == 8, ...)`` with that
+    message must exist; it is replaced with an assert that ``uintptr_t`` is as wide
+    as a pointer, plus ``#include <stdint.h>``.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when neither signal is present or the matching code is not
+        unique. When the log has the byte-order signal, the pointer-width fix is not
+        tried.
+    """
     if "network-order bytes differ" in log.lower():
         pattern = re.compile(
             r"void\s+(\w+)\(unsigned\s+(\w+),\s*unsigned char\s+(\w+)\[4\]\)\s*"
@@ -881,6 +1222,23 @@ def _portable_abi_or_bytes(
 def _synchronized_dispatch(
     files: list[tuple[str, str]], log: str
 ) -> DeterministicMatch | None:
+    """Stop defining an optimized CRC backend that is not linked, and add a fallback.
+
+    Log signal: ``undefined reference to `optimized_``. Exactly one line across all
+    ``CMakeLists.txt`` files must contain ``HAVE_OPTIMIZED_``, and exactly one
+    ``dispatch.c`` must hold the ``#ifdef HAVE_OPTIMIZED_CRC`` block that calls
+    ``optimized_crc``, with a sibling ``generic.c`` that defines ``crc_generic``. The
+    CMake line is replaced with a comment, and the dispatch block gains an ``#else``
+    branch that calls ``crc_generic``. Both edits go into one match so the feature
+    definition and the dispatch code stay consistent.
+
+    Args:
+        files: The repository text files from ``_text_files``.
+        log: The normalized failure log.
+
+    Returns:
+        The match, or None when the signal is missing or either piece is not unique.
+    """
     if "undefined reference to `optimized_" not in log:
         return None
     file_map = dict(files)
@@ -939,7 +1297,21 @@ def _synchronized_dispatch(
 def match_deterministic_repair(
     case: CaseData, failure: FailureAnalysis, repo: Path
 ) -> DeterministicMatch | None:
-    """Return the first uniquely evidenced generic repair rule, never using case IDs."""
+    """Try each repair rule in a fixed order and return the first that matches.
+
+    The order is: Debian multiarch path, Debian symbols, autoconf rejected x86 flags,
+    then the rules that need only the files and the log, from the unconditional build
+    abort to the synchronized dispatch. Rules decide from the log and the repository
+    contents alone, never from Case IDs or package names.
+
+    Args:
+        case: The loaded Case, used for its source and target architectures.
+        failure: The forensics result; only its normalized log is used.
+        repo: The root of the package worktree.
+
+    Returns:
+        The first rule match, or None if no rule found unique evidence.
+    """
     files = _text_files(repo)
     log = failure.normalized_log
     multiarch = _debian_multiarch_path(files, log, case)

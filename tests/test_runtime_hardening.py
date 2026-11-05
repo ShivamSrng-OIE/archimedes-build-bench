@@ -1,3 +1,9 @@
+"""Tests that RuntimeConfig.from_environment() rejects unsafe or incomplete settings.
+
+Bad numbers, malformed local model URLs, half-set cost limits and unknown log
+levels must all raise ConfigurationError before the Agent starts work.
+"""
+
 from __future__ import annotations
 
 import os
@@ -9,7 +15,13 @@ from src.errors import ConfigurationError
 
 
 class RuntimeHardeningTests(unittest.TestCase):
+    """Check the validation of ARCHIMEDES_* environment variables."""
+
     def test_configuration_rejects_nonfinite_and_negative_cost_values(self) -> None:
+        """Check that NaN, infinity, negative and non-numeric timeout or cost values are refused.
+
+        Such values would silently disable the timeout or the spending limit.
+        """
         names = (
             "ARCHIMEDES_MODEL_TIMEOUT_SECONDS",
             "ARCHIMEDES_MAX_ESTIMATED_COST_USD",
@@ -30,6 +42,10 @@ class RuntimeHardeningTests(unittest.TestCase):
                 RuntimeConfig.from_environment()
 
     def test_local_backend_accepts_ipv6_loopback_and_rejects_userinfo(self) -> None:
+        """Check local model URLs: IPv6 loopback is allowed, credentials and bad ports are not.
+
+        The trailing slash is also stripped so request paths are built consistently.
+        """
         with patch.dict(
             os.environ,
             {
@@ -76,6 +92,10 @@ class RuntimeHardeningTests(unittest.TestCase):
     def test_cost_limit_requires_complete_rates_and_log_level_is_validated(
         self,
     ) -> None:
+        """Check that a cost limit needs both token rates, and that bad log levels or models fail.
+
+        A remote backend with an empty fast model name is refused as well.
+        """
         invalid_environments = (
             {"ARCHIMEDES_MAX_ESTIMATED_COST_USD": "1"},
             {"ARCHIMEDES_INPUT_COST_PER_MILLION": "1"},

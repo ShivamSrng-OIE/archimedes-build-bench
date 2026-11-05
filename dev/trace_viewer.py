@@ -1,4 +1,8 @@
-"""Render an Archimedes JSONL execution trace as a standalone HTML report."""
+"""Turn an Archimedes execution trace (JSON Lines) into a single self-contained HTML page.
+
+This is a development-only viewer that uses just the standard library. It reads the
+output/execution-trace.jsonl file the Agent writes and shows the stage flow and every event.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,19 @@ from pathlib import Path
 
 
 def load_events(path: Path) -> list[dict[str, object]]:
+    """Read every event from a trace file, skipping blank lines.
+
+    Args:
+        path: The execution-trace.jsonl file to read.
+
+    Returns:
+        The events in file order, one dictionary per non-blank line.
+
+    Raises:
+        ValueError: If a line holds valid JSON that is not an object, or the file has no
+            events at all. A line that is not valid JSON raises json.JSONDecodeError,
+            which is a ValueError subclass.
+    """
     events: list[dict[str, object]] = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
@@ -23,6 +40,19 @@ def load_events(path: Path) -> list[dict[str, object]]:
 
 
 def render(events: list[dict[str, object]]) -> str:
+    """Build the HTML page for a list of trace events.
+
+    The page has a row of boxes, one per `state_transition` event, showing the controller
+    stages in order, followed by a table of every event's sequence number, elapsed
+    milliseconds, stage, action and attributes. The title and trace ID come from the first
+    event. All values are HTML-escaped.
+
+    Args:
+        events: The trace events, as returned by `load_events`. Must not be empty.
+
+    Returns:
+        A complete HTML document as a string.
+    """
     transitions = [event for event in events if event.get("action") == "state_transition"]
     flow = "".join(
         f'<span class="node">{html.escape(str(event.get("stage", "unknown")))}</span>'
@@ -61,6 +91,19 @@ th {{ position:sticky; top:0; background:Canvas; }} code {{ white-space:pre-wrap
 
 
 def main() -> int:
+    """Render one trace file to HTML from the command line.
+
+    Command-line options:
+        trace: The execution-trace.jsonl file to read (positional, required).
+        --output: Where to write the HTML page. Default dev/trace.html, relative to the
+            current folder. Parent folders are created.
+
+    Returns:
+        0 once the page is written.
+
+    Raises:
+        ValueError: If the trace file is malformed or empty.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("trace", type=Path)
     parser.add_argument("--output", type=Path, default=Path("dev/trace.html"))

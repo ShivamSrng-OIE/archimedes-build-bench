@@ -1,4 +1,8 @@
-"""Strict extraction and validation for machine-actionable model JSON."""
+"""Strict parsing of model answers into JSON objects that satisfy each task's contract.
+
+Model output is untrusted, so every answer is checked for required keys, types
+and sizes, and patch plans may only use the four exact-text edit operations.
+"""
 
 from __future__ import annotations
 
@@ -47,13 +51,40 @@ _MAX_PATCH_ASSUMPTIONS = 20
 
 
 def _reject_nonfinite_constant(value: str) -> None:
+    """Refuse ``NaN``, ``Infinity`` and ``-Infinity`` while decoding JSON.
+
+    Args:
+        value: The constant name the decoder found.
+
+    Returns:
+        Never returns.
+
+    Raises:
+        ValueError: Always.
+    """
     raise ValueError(f"non-finite JSON number is not allowed: {value}")
 
 
 def _object_from_text(raw: str) -> dict[str, JSONValue]:
+    """Find the one JSON object in a model answer.
+
+    A surrounding Markdown code fence is removed first. If the whole text does
+    not decode, the span from the first ``{`` to the last ``}`` is tried, which
+    covers answers with a short sentence before or after the object.
+
+    Args:
+        raw: The message content returned by the model.
+
+    Returns:
+        The decoded object.
+
+    Raises:
+        ModelProtocolError: If neither attempt yields a JSON object within the
+            nesting limit and free of non-finite numbers.
+    """
     stripped = raw.strip()
     if stripped.startswith("```"):
-        stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", stripped, flags=re.I)
+        stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", stripped, flags=re.IGNORECASE)
     candidates = [stripped]
     start, end = stripped.find("{"), stripped.rfind("}")
     if start >= 0 and end > start:
@@ -70,7 +101,28 @@ def _object_from_text(raw: str) -> dict[str, JSONValue]:
 
 
 def parse_model_json(raw: str, task: ModelTask) -> dict[str, JSONValue]:
-    """Extract one object, require task keys, and reject dangerous edit action types."""
+    """Parse a model answer and check it against the contract for its task.
+
+    Every task must have its required top-level keys. Failure analysis also
+    needs non-empty ``primary_failure`` and ``failure_stage`` strings and at
+    most 50 claims, hypotheses and recommended files. Patch critique needs a
+    boolean ``accepted`` and at most 50 string findings. Patch planning needs
+    non-empty ``repair_family`` and ``rationale``, 1 to 20 assumption strings,
+    and 1 to 5 edits, each using an allowed operation with ``path``,
+    ``replacement`` and ``rationale`` strings and, unless it creates a file, an
+    ``expected_text`` string.
+
+    Args:
+        raw: The message content returned by the model.
+        task: The task the answer belongs to.
+
+    Returns:
+        The validated JSON object.
+
+    Raises:
+        ModelProtocolError: If no JSON object can be extracted or any check
+            above fails.
+    """
     value = _object_from_text(raw)
     missing = _REQUIRED_KEYS[task] - value.keys()
     if missing:

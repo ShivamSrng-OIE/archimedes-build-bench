@@ -1,4 +1,4 @@
-"""Single source of truth for architecture-name normalization."""
+"""The one place that maps raw architecture names such as ``amd64`` to canonical ones."""
 
 from __future__ import annotations
 
@@ -19,7 +19,20 @@ _ALIASES = {
 
 
 def normalize_architecture(raw: str) -> ArchitectureIdentity:
-    """Normalize known aliases while retaining an unknown raw identity as evidence."""
+    """Map a raw architecture name onto its canonical ``Architecture``.
+
+    The name is lower-cased, whitespace is removed and any ``_unknown`` suffix
+    is dropped before lookup. Unrecognised names become
+    ``Architecture.UNKNOWN``, and the raw text is kept so later stages can
+    still report what the Case said.
+
+    Args:
+        raw: The architecture name as found in the Case metadata.
+
+    Returns:
+        The canonical architecture, the raw name, and the cleaned name in
+        ``aliases_observed``.
+    """
     cleaned = re.sub(r"\s+", "", raw.strip().lower()).replace("_unknown", "")
     canonical = _ALIASES.get(cleaned, Architecture.UNKNOWN)
     return ArchitectureIdentity(canonical=canonical, raw=raw, aliases_observed=[cleaned])

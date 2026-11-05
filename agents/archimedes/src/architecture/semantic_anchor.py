@@ -1,10 +1,14 @@
-"""Evidence-bounded semantic anchors for architecture-specific constructs."""
+"""Semantic anchors: conservative records of what each hazard construct is for.
+
+A repair that removes or guards an architecture-specific construct is allowed
+only when its anchor shows the purpose, the invariants to keep and a portable
+alternative, with enough confidence.
+"""
 
 from __future__ import annotations
 
 from ..schemas import SemanticAnchor
 from .hazard_scanner import ArchitectureHazard
-
 
 _ANCHOR_TEMPLATES: dict[str, tuple[str, list[str], list[str]]] = {
     "compiler_flag": (
@@ -79,10 +83,20 @@ _ANCHOR_TEMPLATES: dict[str, tuple[str, list[str], list[str]]] = {
 def extract_anchor(
     hazard: ArchitectureHazard, *, evidence_ids: list[str] | None = None
 ) -> SemanticAnchor | None:
-    """Translate one directly observed hazard into a conservative semantic question.
+    """Build the semantic anchor for one hazard from its category template.
 
-    Templates state invariants to preserve; they do not assert that a fallback exists in the
-    repository. Candidate generation must still prove an exact edit with direct evidence.
+    The template states the purpose, the invariants to preserve and the
+    portable alternatives for that kind of construct. It does not claim that
+    such an alternative exists in this repository; candidate generation still
+    has to prove an exact edit with direct evidence.
+
+    Args:
+        hazard: The hazard found by the scanner.
+        evidence_ids: Ledger IDs of the evidence recorded for the hazard.
+
+    Returns:
+        The anchor, with the hazard's confidence, or ``None`` if the category
+        has no template.
     """
     template = _ANCHOR_TEMPLATES.get(hazard.category)
     if template is None:
@@ -104,7 +118,16 @@ def extract_anchor(
 
 
 def validate_anchor(anchor: SemanticAnchor) -> list[str]:
-    """Return deficiencies that make an architecture-specific repair unsafe."""
+    """List the gaps that make it unsafe to repair the construct an anchor describes.
+
+    Args:
+        anchor: The anchor to check.
+
+    Returns:
+        One message for each problem: no functional purpose, no invariants, no
+        portable alternative, or confidence below 0.80. An empty list means
+        the anchor allows a repair.
+    """
     findings: list[str] = []
     if not anchor.functional_purpose.strip():
         findings.append("functional purpose is unknown")

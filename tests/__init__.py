@@ -1,4 +1,9 @@
-"""Development-only Archimedes tests; excluded from the competition agent bundle."""
+"""Test package for the Archimedes repair agent.
+
+These tests are for development only and are not part of the submission ZIP. Importing
+the package puts ``agents/archimedes`` at the front of ``sys.path`` so that test modules
+can import the agent's code as ``src``.
+"""
 
 from __future__ import annotations
 

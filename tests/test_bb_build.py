@@ -1,3 +1,11 @@
+"""Tests for the ``bb-build`` build-feedback adapter.
+
+They check that ``BbBuildFeedbackProvider`` only turns on when ``input/task.json``
+declares the capability exactly, that the gateway timeout is bounded, and that every
+malformed, failed or rejected gateway reply raises ``BuildFeedbackError`` instead of
+being trusted.
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,7 +21,19 @@ from src.errors import BuildFeedbackError
 
 
 class BbBuildFeedbackProviderTests(unittest.TestCase):
+    """Discovery, timeout and response-parsing tests for ``BbBuildFeedbackProvider``."""
+
     def _workspace(self, root: Path, feedback: object) -> tuple[Path, Path]:
+        """Create an input folder and worktree, with a ``task.json`` that declares feedback.
+
+        Args:
+            root: Temporary folder to build the workspace in.
+            feedback: Value written as the ``build_feedback`` field of ``task.json``. It may
+                be any JSON value, including invalid ones, so tests can probe discovery.
+
+        Returns:
+            The ``(input_dir, repo)`` paths to pass to ``BbBuildFeedbackProvider.discover``.
+        """
         input_dir = root / "input"
         repo = root / "work" / "repo"
         input_dir.mkdir(parents=True)
@@ -30,6 +50,10 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
         return input_dir, repo
 
     def test_discovery_requires_exact_declared_capability(self) -> None:
+        """Check that a well-formed ``build_feedback`` block naming ``bb-build`` turns the provider
+        on with the declared attempt limit. The agent may only call the build gateway when the
+        organizer declares it.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             input_dir, repo = self._workspace(
                 Path(temporary),
@@ -45,6 +69,10 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
         self.assertIsNone(provider.reason_unavailable)
 
     def test_discovery_fails_closed_on_invalid_metadata(self) -> None:
+        """Check that a missing block, the wrong command, or a boolean, zero or above-100 attempt
+        limit leaves the provider off with a reason. A bad declaration must never be read as
+        permission to run builds.
+        """
         invalid = (
             None,
             {"command": "other", "attempt_limit": 1},
@@ -66,6 +94,10 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
                 self.assertTrue(provider.reason_unavailable)
 
     def test_discovery_rejects_malformed_missing_and_oversized_task_files(self) -> None:
+        """Check that a non-object, wrong-schema, NaN, deeply nested, over-1-MB or missing
+        ``task.json`` leaves the provider off. Untrusted input must neither crash discovery nor turn
+        the gateway on.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             input_dir, repo = self._workspace(
@@ -97,6 +129,9 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
             self.assertFalse(missing.available)
 
     def test_timeout_is_bounded_and_invalid_values_use_the_default(self) -> None:
+        """Check that ``BB_BUILD_GATEWAY_TIMEOUT_SECONDS`` is clamped to 1 to 3600 seconds and a
+        non-number falls back to 900, with 5 seconds of slack added in each case.
+        """
         expectations = (("0", 6), ("99999", 3605), ("invalid", 905))
         for raw, expected in expectations:
             with self.subTest(raw=raw), tempfile.TemporaryDirectory() as temporary:
@@ -113,6 +148,9 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
         os.name == "nt", "symbolic-link creation may require Windows elevation"
     )
     def test_discovery_rejects_symlinked_task_metadata(self) -> None:
+        """Check that a ``task.json`` that is a symbolic link is refused. A link could point the
+        agent at metadata outside the read-only input folder.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             input_dir = root / "input"
@@ -131,6 +169,9 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
         self.assertFalse(provider.available)
 
     def test_success_response_is_strictly_parsed(self) -> None:
+        """Check that a valid success reply becomes a successful result, and that the gateway is run
+        with no arguments, from the worktree, with ``check=False``.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             input_dir, repo = self._workspace(
                 Path(temporary),
@@ -165,6 +206,9 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
         self.assertFalse(run.call_args.kwargs["check"])
 
     def test_unavailable_and_failed_invocations_fail_closed(self) -> None:
+        """Check that requesting a build from a disabled provider, an ``OSError`` or timeout from
+        the gateway, and an oversized reply all raise ``BuildFeedbackError``.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             input_dir, repo = self._workspace(root, None)
@@ -200,6 +244,11 @@ class BbBuildFeedbackProviderTests(unittest.TestCase):
                 available.request(expected_information_value=0.8)
 
     def test_invalid_or_rejected_response_fails_closed(self) -> None:
+        """Check that non-JSON output, gateway rejections, wrong field types, NaN values, a nonzero
+        exit code with ``ok: true``, an incomplete object and a wrong schema version all raise
+        ``BuildFeedbackError``. A reply the adapter cannot fully trust must never count as a build
+        result.
+        """
         responses = (
             subprocess.CompletedProcess(["bb-build"], 0, b"not-json", b""),
             subprocess.CompletedProcess(

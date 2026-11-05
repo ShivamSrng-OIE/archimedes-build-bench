@@ -1,3 +1,11 @@
+"""Tests for running against the organizer's hosted model endpoint.
+
+They cover reading the ``BB_MODEL_*`` settings and token file, refusing incomplete or
+refused completions, keeping deterministic repairs when the critique call fails, the
+exact request sent to ``/v1/chat/completions``, and keeping the token out of every
+output file.
+"""
+
 from __future__ import annotations
 
 import json
@@ -16,18 +24,24 @@ from src.context.token_budget import UsageBudget
 from src.errors import ConfigurationError, ModelProtocolError
 from src.main import run
 from src.models.base import ModelTask
-from .mock_model import MockModelClient
 from src.models.openai_compatible import OpenAICompatibleModelClient
 from src.models.router import ModelRouter
 from src.reasoning.controller import RepairController
 from src.workspace.capabilities import CapabilityRegistry
 from src.workspace.paths import WorkspacePaths
 
+from .mock_model import MockModelClient
 from .support import make_workspace, runtime_config
 
 
 class HostedModelIntegrationTests(unittest.TestCase):
+    """Tests for hosted settings, request shape, critique fallbacks and token handling."""
+
     def test_injected_settings_override_development_model_and_use_token_file(self) -> None:
+        """Check that the ``BB_MODEL_*`` variables switch to the hosted backend, override the
+        ``ARCHIMEDES_*`` model settings, read the token from its file, set a 620-second timeout, and
+        keep the token out of the config's ``repr``.
+        """
         with tempfile.TemporaryDirectory() as directory:
             token_file = Path(directory) / "task-token"
             token_file.write_text("temporary-token\n", encoding="utf-8")
@@ -47,6 +61,9 @@ class HostedModelIntegrationTests(unittest.TestCase):
             self.assertNotIn("temporary-token", repr(config))
 
     def test_partial_or_unreadable_hosted_settings_fail_without_secret_in_error(self) -> None:
+        """Check that setting only some ``BB_MODEL_*`` variables, or pointing at a missing token
+        file, raises ``ConfigurationError`` whose message does not include the token path.
+        """
         with patch.dict(os.environ, {"BB_MODEL_NAME": "alias"}, clear=True):
             with self.assertRaisesRegex(ConfigurationError, "incomplete hosted"):
                 RuntimeConfig.from_environment()
@@ -54,12 +71,14 @@ class HostedModelIntegrationTests(unittest.TestCase):
             "BB_MODEL_BASE_URL": "http://127.0.0.1:9876/v1",
             "BB_MODEL_NAME": "alias",
             "BB_MODEL_TOKEN_FILE": "/missing/private-token",
-        }, clear=True):
-            with self.assertRaises(ConfigurationError) as failure:
-                RuntimeConfig.from_environment()
+        }, clear=True), self.assertRaises(ConfigurationError) as failure:
+            RuntimeConfig.from_environment()
         self.assertNotIn("/missing/private-token", str(failure.exception))
 
     def test_oversized_credential_and_wrong_base_path_are_rejected(self) -> None:
+        """Check that a token file over 4,096 characters and a base URL that does not end in ``/v1``
+        are both rejected with ``ConfigurationError``.
+        """
         with tempfile.TemporaryDirectory() as directory:
             token_file = Path(directory) / "task-token"
             token_file.write_text("x" * 4097, encoding="utf-8")
@@ -78,6 +97,9 @@ class HostedModelIntegrationTests(unittest.TestCase):
                     RuntimeConfig.from_environment()
 
     def test_incomplete_or_refused_completion_is_not_accepted(self) -> None:
+        """Check that a reply cut off by length, missing a finish reason, carrying a refusal, or
+        holding more than one choice raises ``ModelProtocolError``.
+        """
         for finish_reason, refusal in (("length", None), (None, None), ("stop", "no")):
             with self.subTest(finish_reason=finish_reason, refusal=refusal):
                 response = {
@@ -96,7 +118,10 @@ class HostedModelIntegrationTests(unittest.TestCase):
                 ]
             })
 
-    def test_hosted_deterministic_repair_requires_successful_model_critique(self) -> None:
+    def test_hosted_deterministic_repair_is_critiqued_once_and_applied_when_accepted(self) -> None:
+        """Check that on the hosted backend a deterministic repair is sent for exactly one model
+        critique and is applied when the critique accepts it.
+        """
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repo, _ = make_workspace(
@@ -129,6 +154,20 @@ class HostedModelIntegrationTests(unittest.TestCase):
     def _run_hosted_generic_abort(
         self, responses: dict[ModelTask, object]
     ) -> tuple[object, ModelRouter, Path]:
+        """Run the controller on the hosted backend with a scripted model.
+
+        The workspace has a ``build.sh`` that echoes the logged error and exits with status 9,
+        which the deterministic abort rule can repair. The temporary folder is removed when the
+        test finishes.
+
+        Args:
+            responses: Fixtures for ``MockModelClient``, keyed by model task. An empty dict
+                makes every model call fail.
+
+        Returns:
+            The controller outcome, the ``ModelRouter`` that recorded the model calls, and
+            the path of ``build.sh``.
+        """
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -153,11 +192,17 @@ class HostedModelIntegrationTests(unittest.TestCase):
         return outcome, router, script
 
     def test_hosted_critique_failure_keeps_deterministic_repair(self) -> None:
+        """Check that the deterministic repair is still applied when the critique call fails. A
+        model outage should not throw away a repair the rules already justify.
+        """
         outcome, _, script = self._run_hosted_generic_abort({})
         self.assertEqual(outcome.result.modified_paths, ["build.sh"])  # type: ignore[attr-defined]
         self.assertNotIn("exit 9", script.read_text(encoding="utf-8"))
 
     def test_hosted_critique_rejection_without_alternative_keeps_deterministic_repair(self) -> None:
+        """Check that a critique that rejects the repair but offers no alternative does not stop the
+        deterministic repair from being applied.
+        """
         outcome, router, script = self._run_hosted_generic_abort(
             {ModelTask.PATCH_CRITIQUE: {"accepted": False, "findings": ["speculative"]}}
         )
@@ -166,10 +211,21 @@ class HostedModelIntegrationTests(unittest.TestCase):
         self.assertNotIn("exit 9", script.read_text(encoding="utf-8"))
 
     def test_hosted_http_error_keeps_repair_and_traces_status_without_token(self) -> None:
+        """Check, against a local HTTP server that always answers 502, that ``run()`` still applies
+        the repair, exits 0, traces one ``model_critique_unavailable`` event with the status, and
+        never writes the token to any output file.
+        """
         requests: list[str] = []
 
         class FailingHandler(BaseHTTPRequestHandler):
+            """HTTP handler that records each request path and answers 502 with no body."""
+
             def do_POST(self) -> None:
+                """Read the request body, record its path and reply with HTTP 502.
+
+                Returns:
+                    None.
+                """
                 self.rfile.read(int(self.headers["Content-Length"]))
                 requests.append(self.path)
                 self.send_response(502)
@@ -177,7 +233,14 @@ class HostedModelIntegrationTests(unittest.TestCase):
                 self.end_headers()
 
             def log_message(self, *_: object) -> None:
-                pass
+                """Silence the default request logging so test output stays clean.
+
+                Args:
+                    *_: The format string and values the base class would log. They are ignored.
+
+                Returns:
+                    None.
+                """
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), FailingHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -221,15 +284,33 @@ class HostedModelIntegrationTests(unittest.TestCase):
         self.assertEqual(requests, ["/v1/chat/completions"])
 
     def test_fatal_hosted_failure_is_traced_and_exits_nonzero(self) -> None:
+        """Check that when no deterministic repair exists and the hosted model fails, ``run()``
+        exits nonzero, writes a ``failed`` result, traces one ``model_unavailable_fatal`` event and
+        never writes the token to any output file.
+        """
         class FailingHandler(BaseHTTPRequestHandler):
+            """HTTP handler that answers every POST with 502 and no body."""
+
             def do_POST(self) -> None:
+                """Read the request body and reply with HTTP 502.
+
+                Returns:
+                    None.
+                """
                 self.rfile.read(int(self.headers["Content-Length"]))
                 self.send_response(502)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
             def log_message(self, *_: object) -> None:
-                pass
+                """Silence the default request logging so test output stays clean.
+
+                Args:
+                    *_: The format string and values the base class would log. They are ignored.
+
+                Returns:
+                    None.
+                """
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), FailingHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -271,10 +352,25 @@ class HostedModelIntegrationTests(unittest.TestCase):
             thread.join(timeout=2)
 
     def test_injected_http_channel_repairs_case_and_sends_supported_request(self) -> None:
+        """Check the full hosted path against a local fake endpoint: the repair is applied,
+        ``bb-build`` stays disabled, and the single request goes to ``/v1/chat/completions`` with
+        the bearer token, ``store: false``, ``max_completion_tokens: 8192`` and no ``temperature``
+        or ``response_format``.
+        """
         captured: list[dict[str, object]] = []
 
         class ModelHandler(BaseHTTPRequestHandler):
+            """HTTP handler that records each request and answers with an accepted critique."""
+
             def do_POST(self) -> None:
+                """Record the request, then send back an accepted critique.
+
+                The path, the ``Authorization`` header and the parsed JSON body are appended to
+                ``captured`` so the test can check them after the run.
+
+                Returns:
+                    None.
+                """
                 size = int(self.headers["Content-Length"])
                 captured.append({
                     "path": self.path,
@@ -295,7 +391,14 @@ class HostedModelIntegrationTests(unittest.TestCase):
                 self.wfile.write(body)
 
             def log_message(self, *_: object) -> None:
-                pass
+                """Silence the default request logging so test output stays clean.
+
+                Args:
+                    *_: The format string and values the base class would log. They are ignored.
+
+                Returns:
+                    None.
+                """
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), ModelHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

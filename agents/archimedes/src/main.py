@@ -1,4 +1,9 @@
-"""Thin official runtime entry point for one Archimedes case."""
+"""Process entry point that runs Archimedes on one Build-Bench Case.
+
+It resolves the workspace, loads the configuration, picks a build-feedback provider
+and a model router, runs the repair controller, writes ``agent-result.json`` and
+turns the outcome into the process exit code.
+"""
 
 from __future__ import annotations
 
@@ -28,9 +33,20 @@ def _write_terminal_diagnostic(
     *,
     message: str,
 ) -> None:
-    """Best-effort protocol diagnostic without masking the fatal process exit.
+    """Try to write a ``"failed"`` agent result after a fatal error.
 
-    The nonzero process exit remains the authoritative Agent-error signal.
+    The nonzero exit code is what tells the platform the Agent failed; the
+    result file only adds a readable message. Any error while writing it is logged and
+    swallowed so it cannot replace the original failure.
+
+    Args:
+        logger: Logger used to report a failure to write the result.
+        workspace: The resolved workspace, or ``None`` if resolution itself
+            failed, in which case nothing is written.
+        message: Human-readable reason stored in the result's ``message``.
+
+    Returns:
+        None.
     """
     if workspace is None:
         return
@@ -44,9 +60,20 @@ def _write_terminal_diagnostic(
 
 
 def run() -> int:
-    # Establish a safe logger and the protocol output location before parsing
-    # optional runtime settings. A malformed setting must still yield a
-    # structured agent-result.json whenever the official workspace is valid.
+    """Run the Agent once on the workspace named by ``BB_WORKSPACE``.
+
+    Build feedback through ``bb-build`` is considered only outside hosted mode,
+    when the executable is on ``PATH`` and the Case declares it; in hosted
+    evaluation the Agent never asks for official builds.
+
+    Returns:
+        The process exit code: 0 when the run completed (with or without an
+        edit), 1 for a known ``ArchimedesError`` such as invalid configuration
+        or a fatal hosted model failure, and 2 for any unexpected error.
+    """
+    # The logger and the workspace are set up before the optional settings are
+    # parsed, so a malformed setting still produces a structured
+    # agent-result.json whenever the official workspace is valid.
     configure_logging("INFO")
     logger = logging.getLogger(__name__)
     workspace: WorkspacePaths | None = None

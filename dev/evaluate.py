@@ -1,8 +1,8 @@
-"""Run trusted synthetic cases under one controlled Archimedes configuration.
+"""Run the synthetic cases in dev/synthetic_cases under one Archimedes configuration.
 
-This development harness does not invoke arbitrary package build scripts. It measures agent
-orchestration and synthetic causal/repair-family agreement. Official verified build success must
-come from the future official validator and remains the primary competition metric.
+The harness runs the Agent on each case in a temporary workspace and records whether it edited
+the expected file and chose the expected repair family. It never runs package builds, so it says
+nothing about build success; only the organizer's Validator can confirm that.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +44,20 @@ _SENSITIVE_OUTPUT = re.compile(
 
 
 def safe_error_summary(stderr: str, *, max_characters: int = 3000) -> str | None:
-    """Retain a bounded diagnostic tail without copying credentials into result tables."""
+    """Return the end of the Agent's stderr with credential values masked.
+
+    Values after `Authorization:`, `api_key=`, `password=` and `token=` style prefixes are
+    replaced with `[REDACTED]` before trimming, so result tables and artifact folders never
+    hold a secret that the Agent happened to print.
+
+    Args:
+        stderr: The Agent process's captured standard error.
+        max_characters: How many characters to keep from the end of the redacted text.
+
+    Returns:
+        The last `max_characters` characters of the redacted text, or None when `stderr`
+        is empty or only whitespace.
+    """
     if not stderr.strip():
         return None
     redacted = _SENSITIVE_OUTPUT.sub(lambda match: f"{match.group(1)}[REDACTED]", stderr)
@@ -52,6 +65,12 @@ def safe_error_summary(stderr: str, *, max_characters: int = 3000) -> str | None
 
 
 def git_commit() -> str:
+    """Return the commit hash checked out in this repository.
+
+    Returns:
+        The output of `git rev-parse HEAD`, or "uncommitted" when git fails (for example,
+        outside a Git checkout).
+    """
     completed = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False
     )
@@ -59,6 +78,17 @@ def git_commit() -> str:
 
 
 def load_configuration(name: str) -> dict[str, str]:
+    """Load the environment overrides for one configuration from dev/configurations.json.
+
+    Args:
+        name: The configuration letter, "A" to "K".
+
+    Returns:
+        The configuration's environment variables as strings, without its "description" entry.
+
+    Raises:
+        SystemExit: If `name` is not defined in the configuration file.
+    """
     all_configs = json.loads(CONFIGURATIONS.read_text(encoding="utf-8"))
     if name not in all_configs:
         raise SystemExit(f"unknown configuration {name!r}; choose one of {', '.join(all_configs)}")
@@ -66,6 +96,19 @@ def load_configuration(name: str) -> dict[str, str]:
 
 
 def select_cases(names: list[str]) -> list[Path]:
+    """Pick the synthetic case folders to run.
+
+    A folder under dev/synthetic_cases counts as a case only if it contains a case.json file.
+
+    Args:
+        names: Case folder names to run, in the order given. An empty list means all cases.
+
+    Returns:
+        The case folders, in the order of `names`, or sorted by name when `names` is empty.
+
+    Raises:
+        SystemExit: If any name does not match a case folder.
+    """
     available = {path.name: path for path in CASES.iterdir() if (path / "case.json").is_file()}
     if not names:
         return [available[name] for name in sorted(available)]
@@ -84,6 +127,37 @@ def run_case(
     artifact_dir: Path | None = None,
     case_timeout_seconds: float = 120,
 ) -> dict[str, object]:
+    """Run the Agent on one synthetic case and return its result row.
+
+    The case's repo/, case.json and failure.log are copied into a fresh temporary workspace
+    laid out like the competition one (input/, work/repo/, output/). The Agent is started as
+    `python -m src.main` from agents/archimedes with `BB_WORKSPACE` pointing at it. The
+    environment is built from the current process, then FEATURE_DEFAULTS, then `config_env`,
+    so the configuration always wins. The workspace is deleted afterwards unless
+    `artifact_dir` is set.
+
+    Args:
+        case_dir: The synthetic case folder.
+        configuration: The configuration letter, recorded in the row and in file names.
+        config_env: Environment overrides from `load_configuration`.
+        seed: Run label recorded with each result row; the Agent itself is deterministic.
+        trace_dir: If set, output/execution-trace.jsonl is copied here as
+            `<case_id>-<configuration>.jsonl`.
+        artifact_dir: If set, the whole workspace is copied here as
+            `<case_id>-<configuration>`, with a numeric suffix if that folder already
+            exists, plus agent-error-summary.log when the Agent wrote to stderr.
+        case_timeout_seconds: Wall-clock limit for the Agent process, in seconds.
+
+    Returns:
+        One result row: the Agent's metrics.json fields, plus case metadata, the model
+        settings, the exit code, whether the expected causal file was modified and the
+        expected repair family selected, the feature flags, the Git commit, a timestamp,
+        the case.json SHA-256 and any saved trace or artifact paths.
+        `verified_build_success` is always None.
+
+    Raises:
+        subprocess.TimeoutExpired: If the Agent runs longer than `case_timeout_seconds`.
+    """
     with tempfile.TemporaryDirectory(prefix="archimedes-eval-") as temp_name:
         workspace = Path(temp_name)
         input_dir = workspace / "input"
@@ -100,7 +174,6 @@ def run_case(
         environment.update(FEATURE_DEFAULTS)
         environment.update(config_env)
         environment["BB_WORKSPACE"] = str(workspace)
-        environment["ARCHIMEDES_RANDOM_SEED"] = str(seed)
         completed = subprocess.run(
             [sys.executable, "-m", "src.main"], cwd=AGENT, env=environment,
             capture_output=True,
@@ -175,7 +248,7 @@ def run_case(
                 },
                 sort_keys=True,
             ),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "seed": seed,
             "case_content_sha256": hashlib.sha256((case_dir / "case.json").read_bytes()).hexdigest(),
             "trace_path": persisted_trace,
@@ -184,6 +257,18 @@ def run_case(
 
 
 def write_results(path: Path, rows: list[dict[str, object]]) -> None:
+    """Write result rows as CSV or JSON Lines, chosen by the file extension.
+
+    A `.csv` path gets one column per key seen in any row, sorted by name. Any other
+    extension gets one JSON object per line with sorted keys. Parent folders are created.
+
+    Args:
+        path: The output file. It is overwritten if it exists.
+        rows: The result rows from `run_case`.
+
+    Returns:
+        None.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix.lower() == ".csv":
         fields = sorted({key for row in rows for key in row})
@@ -198,6 +283,28 @@ def write_results(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def main() -> int:
+    """Run the selected synthetic cases and write one result row per case.
+
+    Command-line options:
+        --configuration: Configuration letter from dev/configurations.json, A to K.
+            Default "K" (full Archimedes with whatever model backend the caller set).
+        --case: Synthetic case folder name. Repeat it to run several cases; omit it to
+            run every case.
+        --output: Result file. A `.csv` extension writes CSV, anything else writes JSON
+            Lines. Default dev/results.jsonl.
+        --seed: Run label recorded with each result row. Default 0.
+        --trace-dir: Folder to copy each case's execution trace into.
+        --artifact-dir: Folder to keep each case's whole workspace in, for inspection.
+        --case-timeout-seconds: Time limit for each Agent run. Default 120; raise it
+            for slow local models.
+
+    Returns:
+        0 once the results file is written.
+
+    Raises:
+        SystemExit: If the configuration or a case name is unknown.
+        subprocess.TimeoutExpired: If any Agent run exceeds the time limit.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--configuration", default="K", choices=list("ABCDEFGHIJK"))
     parser.add_argument("--case", action="append", default=[], dest="cases")

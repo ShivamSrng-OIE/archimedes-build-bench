@@ -1,4 +1,7 @@
-"""Explicit weighted familiarity scoring and discovery-mode policy."""
+"""Score how well the target architecture is understood.
+
+A low score switches the controller into the more cautious discovery mode.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +24,17 @@ _WEIGHTS = {
 
 @dataclass(frozen=True, slots=True)
 class FamiliarityAssessment:
+    """The familiarity score of the target architecture and what it implies.
+
+    Attributes:
+        score: Weighted sum of the components, from 0 to 1, rounded to four
+            places.
+        band: ``familiar`` at 0.80 or above, ``moderate`` at 0.60 or above,
+            otherwise ``unfamiliar``.
+        requires_discovery: True when the score is below 0.60.
+        components: Each component's value from 0 to 1, by name.
+    """
+
     score: float
     band: str
     requires_discovery: bool
@@ -35,7 +49,25 @@ def assess_familiarity(
     semantic_analogy: float = 0.0,
     model_agreement: float = 0.0,
 ) -> FamiliarityAssessment:
-    """Calculate a transparent heuristic familiarity score in the range 0..1."""
+    """Compute the familiarity score from eight weighted components.
+
+    Architecture identity, metadata completeness, toolchain evidence and
+    knowledge coverage come from the profile; knowledge coverage is 0.8 for any
+    known architecture. The other four are passed in by the caller and clamped
+    to 0..1; the controller currently passes only repository and rule
+    coverage, so the last two stay at 0.
+
+    Args:
+        profile: The target architecture profile.
+        repository_coverage: How much repository evidence covers the target.
+        portable_rule_coverage: How well the portability rules cover the
+            failure.
+        semantic_analogy: How closely the failure resembles known cases.
+        model_agreement: How far model output agrees with the evidence.
+
+    Returns:
+        The score, its band, whether discovery is needed, and the components.
+    """
     known_facts = sum(1 for fact in profile.facts.values() if fact.value is not None)
     completeness = known_facts / max(1, len(profile.facts))
     components = {

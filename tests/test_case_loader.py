@@ -1,3 +1,9 @@
+"""Tests for ``load_case``, which reads Case metadata and the failure log.
+
+They cover the released Case format, the runner's ``task.json`` format, log paths that
+try to leave the input folder, oversized logs and hostile metadata.
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,12 +19,25 @@ from src.workspace.paths import WorkspacePaths
 
 
 class CaseLoaderTests(unittest.TestCase):
+    """Tests for loading the Case id, architectures and build log."""
+
     def _workspace(self, root: Path) -> WorkspacePaths:
+        """Create empty ``input`` and ``work/repo`` folders and resolve the workspace.
+
+        Args:
+            root: Temporary folder to use as the workspace root.
+
+        Returns:
+            The resolved ``WorkspacePaths`` for ``root``.
+        """
         (root / "input").mkdir()
         (root / "work" / "repo").mkdir(parents=True)
         return WorkspacePaths.resolve(root)
 
     def test_loads_released_development_case_v01_shape(self) -> None:
+        """Check that a ``buildbench.case.v0.1`` ``case.json`` yields the Case id, both
+        architectures and the log named by ``paths.target_failure_log``.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -54,6 +73,9 @@ class CaseLoaderTests(unittest.TestCase):
             self.assertIn("unrecognized command-line option", case.build_log)
 
     def test_released_log_path_cannot_escape_input(self) -> None:
+        """Check that a log path such as ``../outside.log`` is ignored and the build log stays
+        empty. Metadata must not be able to make the agent read files outside the input folder.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -80,6 +102,10 @@ class CaseLoaderTests(unittest.TestCase):
     def test_oversized_log_preserves_terminal_failure_without_loading_middle(
         self,
     ) -> None:
+        """Check that a log over ``MAX_LOG_CHARACTERS`` keeps its start and its final error and
+        replaces the middle with an omission marker. The last lines usually hold the real failure,
+        so they must survive the cut.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -102,6 +128,7 @@ class CaseLoaderTests(unittest.TestCase):
             self.assertLessEqual(len(case.build_log), MAX_LOG_CHARACTERS + 100)
 
     def test_oversized_metadata_is_rejected_before_json_parsing(self) -> None:
+        """Check that a ``case.json`` over 1 MB raises ``CaseFormatError`` without being parsed."""
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -110,6 +137,9 @@ class CaseLoaderTests(unittest.TestCase):
                 load_case(paths)
 
     def test_nonfinite_metadata_numbers_are_rejected(self) -> None:
+        """Check that ``NaN`` in ``case.json`` raises ``CaseFormatError``, since it is not valid
+        JSON.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -120,6 +150,9 @@ class CaseLoaderTests(unittest.TestCase):
                 load_case(paths)
 
     def test_excessively_nested_metadata_is_rejected(self) -> None:
+        """Check that metadata nested 2,000 levels deep raises ``CaseFormatError`` instead of
+        hitting Python's recursion limit.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -129,6 +162,10 @@ class CaseLoaderTests(unittest.TestCase):
                 load_case(paths)
 
     def test_recovers_released_identity_when_runner_task_omits_it(self) -> None:
+        """Check that when the runner's ``task.json`` has no Case id or architectures, they are read
+        from the released ``case.json`` in the worktree, while ``metadata`` still holds the runner's
+        ``task.json``.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)
@@ -162,6 +199,9 @@ class CaseLoaderTests(unittest.TestCase):
             self.assertEqual(case.metadata, runner_metadata)
 
     def test_ignores_unrecognized_worktree_case_metadata(self) -> None:
+        """Check that a worktree ``case.json`` with an unknown schema version is ignored, so the
+        Case id falls back to the workspace folder name and both architectures stay unknown.
+        """
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             paths = self._workspace(root)

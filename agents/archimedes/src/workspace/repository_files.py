@@ -1,11 +1,10 @@
-"""Deterministic, bounded traversal of untrusted package repositories."""
+"""Walk the package worktree in a fixed order with a file limit and no symlinks."""
 
 from __future__ import annotations
 
 import os
 from collections.abc import Iterator
 from pathlib import Path
-
 
 SKIP_DIRECTORIES = {".git", ".hg", ".svn", "node_modules", "__pycache__"}
 MAX_REPOSITORY_FILES = 20_000
@@ -14,7 +13,19 @@ MAX_REPOSITORY_FILES = 20_000
 def iter_repository_files(
     repo: Path, *, max_files: int = MAX_REPOSITORY_FILES
 ) -> Iterator[Path]:
-    """Yield regular non-symlink files without materializing or escaping the tree."""
+    """Yield the worktree's regular files in sorted order, one at a time.
+
+    Directories in ``SKIP_DIRECTORIES`` and symlinks (to files or directories)
+    are skipped, so the walk never leaves the tree. Unreadable entries are
+    ignored. Sorting makes the order the same on every run.
+
+    Args:
+        repo: The worktree root.
+        max_files: Stop after this many files; 20,000 by default.
+
+    Yields:
+        Absolute paths of regular files.
+    """
     if max_files <= 0:
         return
     root = repo.resolve(strict=True)

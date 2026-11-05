@@ -4,7 +4,7 @@
   "C": {"description": "remote strong LLM with minimal selected context", "ARCHIMEDES_MODEL_BACKEND": "remote_openai_compatible", "ARCHIMEDES_MODEL_TIER": "strong", "ARCHIMEDES_CONTEXT_MODE": "archimedes_selected_context", "ENABLE_DETERMINISTIC_FORENSICS": "false", "ENABLE_CLAIM_CONFIDENCE": "false", "ENABLE_ARCHITECTURE_DISCOVERY": "false", "ENABLE_DELTA_GRAPH": "false", "ENABLE_SEMANTIC_ANCHORS": "false", "ENABLE_ACTIVE_PROBES": "false", "ENABLE_REPAIR_RULES": "false", "ENABLE_FAILURE_FRONTIER": "false"},
   "D": {"description": "Archimedes with local LLM", "ARCHIMEDES_MODEL_BACKEND": "local_openai_compatible"},
   "E": {"description": "Archimedes with configured remote strong model", "ARCHIMEDES_MODEL_BACKEND": "remote_openai_compatible", "ARCHIMEDES_MODEL_TIER": "strong"},
-  "F": {"description": "Archimedes without claim-level metacognition", "ENABLE_CLAIM_CONFIDENCE": "false"},
+  "F": {"description": "Archimedes without claim confidence gating", "ENABLE_CLAIM_CONFIDENCE": "false"},
   "G": {"description": "Archimedes without Semantic Anchors", "ENABLE_SEMANTIC_ANCHORS": "false"},
   "H": {"description": "Archimedes without Architecture Discovery", "ENABLE_ARCHITECTURE_DISCOVERY": "false"},
   "I": {"description": "Archimedes without active probes", "ENABLE_ACTIVE_PROBES": "false"},

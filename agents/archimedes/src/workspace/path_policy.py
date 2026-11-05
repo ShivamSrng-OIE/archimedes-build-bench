@@ -1,4 +1,8 @@
-"""Fail-closed policy for all proposed package-tree modifications."""
+"""The single authority on which worktree paths the Agent may edit.
+
+The policy fails closed: any path it cannot prove safe is rejected with a
+``PathPolicyError`` before the file is touched.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +30,20 @@ _MAX_CASE_METADATA_BYTES = 1_000_000
 
 
 def _official_case_uses_input_prefix(repo_root: Path) -> bool:
-    """Recognize the public Case wrapper without trusting arbitrary metadata."""
+    """Tell whether the worktree is a released Case whose package lives under ``input/``.
+
+    In the released layout the worktree root holds ``case.json`` next to an
+    ``input/`` directory with the package source. The file is trusted only if
+    it is a regular file inside the worktree (not a symlink), is at most
+    1,000,000 bytes, and declares schema ``buildbench.case.v0.1`` with task type
+    ``cross_arch_package_build_repair``.
+
+    Args:
+        repo_root: The worktree root, ``work/repo``.
+
+    Returns:
+        True if edits should be limited to the ``input/`` subtree.
+    """
     case_path = repo_root / "case.json"
     try:
         if case_path.is_symlink():
@@ -56,14 +73,39 @@ def _official_case_uses_input_prefix(repo_root: Path) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class PathPolicy:
+    """Rules that decide whether a proposed edit path is safe.
+
+    Attributes:
+        repo_root: The worktree root, ``work/repo``.
+        allowed_patterns: Path prefixes or glob patterns the Case allows, or
+            ``None`` when every path inside the worktree is allowed.
+    """
+
     repo_root: Path
     allowed_patterns: tuple[str, ...] | None = None
 
     @classmethod
     def from_metadata(
         cls, repo_root: Path, metadata: dict[str, JSONValue]
-    ) -> "PathPolicy":
-        """Honor an optional published allowed_paths list without inventing it when absent."""
+    ) -> PathPolicy:
+        """Build a policy from the Case's optional ``allowed_paths`` list.
+
+        The list is read from ``allowed_paths`` or ``policy.allowed_paths``.
+        When neither exists, the released Case layout limits edits to
+        ``input/``; any other Case gets no extra restriction, since none was
+        published.
+
+        Args:
+            repo_root: The worktree root, ``work/repo``.
+            metadata: The Case metadata.
+
+        Returns:
+            The policy for this Case.
+
+        Raises:
+            PathPolicyError: If ``allowed_paths`` is not a non-empty list of
+                strings, or an entry is absolute or contains ``..``.
+        """
         value: JSONValue | None = metadata.get("allowed_paths")
         policy = metadata.get("policy")
         if value is None and isinstance(policy, dict):
@@ -91,6 +133,19 @@ class PathPolicy:
         return cls(repo_root, tuple(patterns))
 
     def _is_declared_allowed(self, path: PurePosixPath) -> bool:
+        """Check a path against the Case's allowed patterns.
+
+        A pattern without glob characters allows that path and everything
+        below it. A pattern with ``*``, ``?`` or ``[`` is matched with
+        ``PurePosixPath.match``. ``.``, ``*``, ``**`` and ``**/*`` allow
+        everything.
+
+        Args:
+            path: Repository-relative path to check.
+
+        Returns:
+            True if no patterns are declared or any pattern allows the path.
+        """
         if self.allowed_patterns is None:
             return True
         relative = path.as_posix()
@@ -106,11 +161,27 @@ class PathPolicy:
         return False
 
     def validate_relative(self, proposed: str, *, creating: bool = False) -> Path:
-        """Resolve a model-proposed relative path beneath work/repo.
+        """Check a proposed repository-relative path and return where it points.
+
+        Paths come from rules and from the model, so each one is checked as
+        untrusted input before any file is read or written.
+
+        Args:
+            proposed: Repository-relative path; backslashes are treated as
+                ``/``.
+            creating: Whether the edit creates the file, in which case the file
+                may not exist yet.
+
+        Returns:
+            The absolute path inside the worktree.
 
         Raises:
-            PathPolicyError: If the path is absolute, traverses, targets protected
-                metadata, leaves the repository through a symlink, or is a directory.
+            PathPolicyError: If the path is empty, absolute, longer than 4,096
+                bytes, has a component over 255 bytes or a control character,
+                uses ``.`` or ``..``, names a VCS or cache directory, a ``.env``
+                file or anything containing ``evaluator`` or ``hidden``, lies
+                outside the Case's allowed paths, escapes the worktree, is a
+                symlink or a directory, or does not exist when not ``creating``.
         """
         normalized = proposed.replace("\\", "/")
         encoded = normalized.encode("utf-8", errors="surrogatepass")
@@ -186,7 +257,17 @@ class PathPolicy:
         return candidate
 
     def relative_path(self, path: Path) -> str:
-        """Return an audited POSIX-style path relative to the package repository."""
+        """Express an absolute path relative to the worktree, with ``/`` separators.
+
+        Args:
+            path: A path inside the worktree.
+
+        Returns:
+            The POSIX-style relative path.
+
+        Raises:
+            PathPolicyError: If the path resolves outside the worktree.
+        """
         try:
             return (
                 path.resolve(strict=False)

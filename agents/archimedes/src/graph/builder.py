@@ -1,4 +1,4 @@
-"""Build an initial source-target causal delta from failure and hazard evidence."""
+"""Build the initial delta graph from the primary diagnostic and the hazard scan."""
 
 from __future__ import annotations
 
@@ -19,7 +19,21 @@ _HAZARD_NODES = {
 def build_delta_graph(
     case: CaseData, failure: FailureAnalysis, hazards: list[ArchitectureHazard]
 ) -> DeltaGraph:
-    """Connect observed failure tokens to repository architecture assumptions."""
+    """Link the failure to the files and hazards it can be traced to.
+
+    Every hazard gets a file node and a hazard node joined by a ``DECLARES``
+    edge. When a hazard's matched text appears in the primary diagnostic, the
+    failure gets a ``TRACES_TO`` edge to it and the hazard gets an
+    ``INVALID_ON_TARGET`` edge back, marked with the target architecture.
+
+    Args:
+        case: The Case, for the target architecture.
+        failure: The log analysis, for the primary diagnostic.
+        hazards: Hazards found by the static scan.
+
+    Returns:
+        The new graph.
+    """
     graph = DeltaGraph()
     failure_node = GraphNode("failure-001", NodeType.FAILURE, failure.primary_diagnostic)
     graph.add_node(failure_node)

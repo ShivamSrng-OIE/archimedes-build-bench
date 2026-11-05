@@ -1,41 +1,45 @@
-"""Typed failures surfaced at Archimedes subsystem boundaries."""
+"""Exception types the Agent raises on purpose.
+
+``main.run`` maps any ``ArchimedesError`` to exit code 1 and anything else to
+exit code 2, so these classes separate known failures from internal bugs.
+"""
 
 
 class ArchimedesError(Exception):
-    """Base class for expected agent failures."""
+    """Base class for failures the Agent expects and reports cleanly."""
 
 
 class ConfigurationError(ArchimedesError):
-    """Runtime configuration is invalid or incomplete."""
+    """Raised when an environment setting is missing, malformed or inconsistent."""
 
 
 class WorkspaceError(ArchimedesError):
-    """The official workspace layout is missing or inaccessible."""
+    """Raised when the workspace directories are missing or escape the root."""
 
 
 class CaseFormatError(ArchimedesError):
-    """Case metadata or input log does not have a supported shape."""
+    """Raised when ``case.json`` or the failure log cannot be read in a supported form."""
 
 
 class PathPolicyError(ArchimedesError):
-    """A requested filesystem operation violates workspace policy."""
+    """Raised when a path may not be read or edited under the path policy."""
 
 
 class ModelError(ArchimedesError):
-    """A model provider could not complete a request safely."""
+    """Raised when a model request fails at the transport or HTTP level."""
 
 
 class ModelProtocolError(ModelError):
-    """A model response did not satisfy the structured JSON contract."""
+    """Raised when a model reply or answer breaks the expected JSON contract."""
 
 
 class PatchValidationError(ArchimedesError):
-    """A structured edit failed a deterministic guard."""
+    """Raised when an edit fails a precondition or cannot be written atomically."""
 
 
 class BuildFeedbackError(ArchimedesError):
-    """The official build-feedback adapter failed."""
+    """Raised when a build-feedback request fails or returns an unusable answer."""
 
 
 class BudgetExhaustedError(ArchimedesError):
-    """A configured model, build, time, or monetary budget is exhausted."""
+    """Raised when a call would exceed a model, build, token or cost budget."""

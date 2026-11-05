@@ -1,3 +1,10 @@
+"""Tests for how the repair controller uses model-generated patch plans.
+
+A mock model client returns scripted analyses and plans, so these tests can check
+that unsafe or incomplete plans are rejected, that the model is asked again after a
+rejection, and that model calls are credited only for patches they really caused.
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,21 +14,27 @@ from pathlib import Path
 
 from src.build.feedback import BuildFeedbackResult
 from src.build.unavailable import UnavailableBuildFeedbackProvider
-from src.context.token_budget import UsageBudget
 from src.config import FeatureFlags
+from src.context.token_budget import UsageBudget
 from src.errors import ModelError
 from src.forensics.log_parser import analyze_build_log
 from src.models.base import ModelTask
-from .mock_model import MockModelClient
 from src.models.router import ModelRouter
 from src.reasoning.controller import RepairController
 from src.schemas import FailureFrontier, FrontierStage
 from src.workspace.paths import WorkspacePaths
 
+from .mock_model import MockModelClient
 from .support import make_workspace, runtime_config
 
 
 def analysis_response() -> dict[str, object]:
+    """Return a canned failure analysis that points at src/value.c.
+
+    Returns:
+        A failure-analysis reply with one claim and src/value.c as the
+        recommended file.
+    """
     return {
         "primary_failure": "invalid target-independent return value",
         "failure_stage": "compile",
@@ -32,6 +45,16 @@ def analysis_response() -> dict[str, object]:
 
 
 def router_for(plan: dict[str, object] | list[dict[str, object]]) -> ModelRouter:
+    """Build a model router whose mock client answers with the given patch plans.
+
+    Args:
+        plan: One patch plan, or a list of plans returned in order on
+            successive planning calls.
+
+    Returns:
+        A ModelRouter allowing 5 calls, 2 of them strong-tier, 20,000 tokens
+        and a 2-second timeout per request.
+    """
     client = MockModelClient(
         {
             ModelTask.FAILURE_ANALYSIS: analysis_response(),
@@ -42,11 +65,31 @@ def router_for(plan: dict[str, object] | list[dict[str, object]]) -> ModelRouter
 
 
 class SuccessfulBuildFeedback:
+    """Build gateway stand-in whose single allowed build always succeeds.
+
+    Attributes:
+        available: Always True.
+        reason_unavailable: Always None.
+        request_limit: One build request.
+    """
+
     available = True
     reason_unavailable = None
     request_limit = 1
 
     def request(self, *, expected_information_value: float) -> BuildFeedbackResult:
+        """Return a successful build result.
+
+        Args:
+            expected_information_value: The controller's estimate of what the
+                build would teach it; must be above zero.
+
+        Returns:
+            A successful result with request id "model-build-1".
+
+        Raises:
+            AssertionError: If the expected information value is zero or less.
+        """
         if expected_information_value <= 0:
             raise AssertionError("build experiment needs information value")
         return BuildFeedbackResult(
@@ -58,14 +101,40 @@ class SuccessfulBuildFeedback:
 
 
 class RegressionThenSuccessBuildFeedback:
+    """Build gateway stand-in that regresses to configure first, then succeeds.
+
+    Attributes:
+        available: Always True.
+        reason_unavailable: Always None.
+        request_limit: Two build requests.
+        calls: How many builds have been requested so far.
+    """
+
     available = True
     reason_unavailable = None
     request_limit = 2
 
     def __init__(self) -> None:
+        """Start with no builds requested.
+
+        Returns:
+            None.
+        """
         self.calls = 0
 
     def request(self, *, expected_information_value: float) -> BuildFeedbackResult:
+        """Return a configure-stage failure on the first call and success afterwards.
+
+        Args:
+            expected_information_value: The controller's estimate of what the
+                build would teach it; must be above zero.
+
+        Returns:
+            The "build-regression" result first, then "build-success".
+
+        Raises:
+            AssertionError: If the expected information value is zero or less.
+        """
         if expected_information_value <= 0:
             raise AssertionError("build experiment needs information value")
         self.calls += 1
@@ -87,16 +156,45 @@ class RegressionThenSuccessBuildFeedback:
 
 
 class FailingModelClient(MockModelClient):
+    """Mock model client that fails every request like an unreachable provider."""
+
     def __init__(self) -> None:
+        """Set up the mock with no canned replies.
+
+        Returns:
+            None.
+        """
         super().__init__({})
 
     def complete_json(self, **kwargs):
+        """Fail the request.
+
+        Args:
+            **kwargs: The usual complete_json() keyword arguments; ignored.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            ModelError: Always, to simulate a provider outage.
+        """
         del kwargs
         raise ModelError("simulated provider outage")
 
 
 class ModelControllerTests(unittest.TestCase):
+    """Check plan validation, replanning and credit for model-driven repairs."""
+
     def _workspace(self, root: Path) -> Path:
+        """Create a workspace whose log blames src/value.c, and write that file.
+
+        Args:
+            root: The temporary directory to build the workspace in.
+
+        Returns:
+            The path of src/value.c, which holds "return -1" for the plans
+            to replace.
+        """
         metadata = json.dumps(
             {
                 "case_id": "model-plan",
@@ -115,6 +213,10 @@ class ModelControllerTests(unittest.TestCase):
         return source
 
     def test_model_provider_failure_finishes_without_false_model_evidence(self) -> None:
+        """Check that a provider outage ends the run cleanly with no edits and no model records.
+
+        The result message must not claim model evidence that was never received.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self._workspace(root)
@@ -133,6 +235,11 @@ class ModelControllerTests(unittest.TestCase):
             self.assertNotIn("model evidence", outcome.result.message)
 
     def test_mock_model_plan_passes_guarded_executor(self) -> None:
+        """Check that a valid model patch plan is applied, built and credited in the episode record.
+
+        The analysis call must be marked as changing a hypothesis, and the planning call as
+        causing the patch and improving the frontier.
+        """
         plan = {
             "repair_family": "source_port",
             "rationale": "replace the diagnostic-linked sentinel with the portable value",
@@ -172,6 +279,10 @@ class ModelControllerTests(unittest.TestCase):
             self.assertTrue(diagnostic["model_call_records"][1]["improved_frontier"])
 
     def test_model_context_centers_the_causal_source_line(self) -> None:
+        """Check that the model sees a window of src/deep.c around line 240, starting at line 161.
+
+        Sending the top of a long file would hide the line the compiler complained about.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repo, _ = make_workspace(root)
@@ -193,6 +304,7 @@ class ModelControllerTests(unittest.TestCase):
         self.assertNotIn("line 1\n", context)
 
     def test_model_plan_with_traversal_is_rejected_without_edit(self) -> None:
+        """Check that a model plan editing ../outside.c is refused and nothing is written."""
         plan = {
             "repair_family": "source_port",
             "rationale": "unsafe path",
@@ -221,6 +333,10 @@ class ModelControllerTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), before)
 
     def test_regressed_rule_is_rolled_back_before_model_alternative(self) -> None:
+        """Check that a rule fix that regresses the build is undone before the model plan is tried.
+
+        The final Makefile must hold only the model's guard, with the flag line appearing once.
+        """
         plan = {
             "repair_family": "architecture_guard",
             "rationale": "guard the existing x86-only option using a different repair family",
@@ -273,6 +389,11 @@ class ModelControllerTests(unittest.TestCase):
             self.assertEqual(outcome.result.modified_paths, ["Makefile"])
 
     def test_model_replans_when_first_plan_leaves_diagnosed_flag_active(self) -> None:
+        """Check that the model is asked again when its first plan leaves -msse4.2 unguarded.
+
+        Inserting a guarded copy keeps the original flag line active, so that plan must be
+        rejected and only the second plan credited with the patch.
+        """
         invalid_insert = {
             "repair_family": "architecture_guard",
             "rationale": "add an architecture guard",
@@ -340,6 +461,7 @@ class ModelControllerTests(unittest.TestCase):
             self.assertTrue(router.records[2].caused_patch)
 
     def test_critic_rejected_model_plan_is_not_credited_with_a_patch(self) -> None:
+        """Check that a plan the critic rejects changes nothing and gets no credit for a patch."""
         rejected = {
             "repair_family": "conditional_compiler_flag",
             "rationale": "probe compiler support without a complete conditional",
@@ -387,6 +509,11 @@ class ModelControllerTests(unittest.TestCase):
             self.assertFalse(router.records[-1].caused_patch)
 
     def test_model_replans_when_target_triple_match_is_exact(self) -> None:
+        """Check that a guard comparing the whole target triple to "x86_64" is rejected.
+
+        gcc -dumpmachine prints a full triple such as x86_64-linux-gnu, so only a prefix
+        match like x86_64% actually keeps the flag on x86 builds.
+        """
         exact_match = {
             "repair_family": "architecture_guard",
             "rationale": "guard the existing x86 option",
@@ -450,6 +577,10 @@ class ModelControllerTests(unittest.TestCase):
             self.assertTrue(router.records[2].caused_patch)
 
     def test_model_replans_after_policy_critic_rejection(self) -> None:
+        """Check that a plan mentioning a curl download is refused and the safe second plan used.
+
+        Repairs must not fetch code from the network, so the policy critic blocks them.
+        """
         policy_sensitive = {
             "repair_family": "source_port",
             "rationale": "download a portable replacement",

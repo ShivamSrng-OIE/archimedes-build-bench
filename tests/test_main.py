@@ -1,3 +1,10 @@
+"""Tests for the entry point in src/main.py and the exit codes it returns.
+
+These cover the failure paths: a bad runtime setting must still produce a
+structured agent-result.json, and an error while writing that file must not crash
+the process.
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,7 +20,14 @@ from .support import make_workspace
 
 
 class MainEntrypointTests(unittest.TestCase):
+    """Check how run() reports configuration and output errors."""
+
     def test_invalid_runtime_configuration_writes_structured_failure(self) -> None:
+        """Check that an unknown ARCHIMEDES_LOG_LEVEL gives exit code 1 and a failed result.
+
+        The platform reads agent-result.json, so even a startup error must leave a
+        valid document with the reason and no modified paths.
+        """
         with tempfile.TemporaryDirectory() as name:
             workspace = Path(name)
             _, output = make_workspace(workspace)
@@ -40,6 +54,10 @@ class MainEntrypointTests(unittest.TestCase):
         self.assertEqual(payload["modified_paths"], [])
 
     def test_failure_result_write_error_does_not_escape(self) -> None:
+        """Check that run() still returns 1 when writing the failure result raises OSError.
+
+        A full disk while reporting a failure must not turn into an uncaught traceback.
+        """
         with tempfile.TemporaryDirectory() as name:
             workspace = Path(name)
             make_workspace(workspace)

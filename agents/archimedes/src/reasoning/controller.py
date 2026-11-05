@@ -1,4 +1,10 @@
-"""Understandable evidence-first state machine for one bounded repair case."""
+"""The controller: a linear state machine that takes one Case from ingestion to a
+finished result, applying at most a bounded number of evidence-gated repairs.
+
+Every stage transition and decision is written to the execution trace, and the run
+ends by writing the evidence ledger, architecture constitution, repair episode and
+metrics to the output directory.
+"""
 
 from __future__ import annotations
 
@@ -22,15 +28,15 @@ from ..context.repository_search import (
     search_regex,
 )
 from ..context.snippet_selector import select_snippets
-from ..evidence.confidence import claim_justifies_patch
-from ..evidence.ledger import EvidenceLedger
 from ..errors import (
-    BuildFeedbackError,
     BudgetExhaustedError,
+    BuildFeedbackError,
     ModelError,
     PatchValidationError,
     PathPolicyError,
 )
+from ..evidence.confidence import claim_justifies_patch
+from ..evidence.ledger import EvidenceLedger
 from ..forensics.frontier import FrontierMovement, compare_frontiers
 from ..forensics.log_parser import analyze_build_log
 from ..graph.builder import build_delta_graph
@@ -41,7 +47,7 @@ from ..models.base import ModelTask
 from ..models.prompts import system_prompt
 from ..models.router import EscalationSignals, ModelRouter
 from ..observability import TraceRecorder
-from ..repair.critic import portability_findings, passes_portability_critic
+from ..repair.critic import passes_portability_critic, portability_findings
 from ..repair.deterministic import match_deterministic_repair
 from ..repair.executor import EditTransaction, apply_candidate, rollback_transaction
 from ..repair.planner import (
@@ -49,7 +55,7 @@ from ..repair.planner import (
     deterministic_match_candidate,
     model_plan_candidate,
 )
-from ..repair.policy_critic import policy_findings, passes_policy_critic
+from ..repair.policy_critic import passes_policy_critic, policy_findings
 from ..result_writer import write_diagnostic
 from ..schemas import (
     AgentResult,
@@ -77,7 +83,20 @@ _PROMPT_EDIT_CHARACTERS = 6_000
 
 
 def _clip_for_prompt(text: str, limit: int = _PROMPT_EDIT_CHARACTERS) -> str:
-    """Bound one edit's text in a model prompt; the applied edit is never clipped."""
+    """Shorten one edit's text for a model prompt, keeping its head and tail.
+
+    Only the prompt copy is clipped; the edit that is actually applied always keeps
+    its full text.
+
+    Args:
+        text: The edit's expected text or replacement.
+        limit: The largest number of characters kept from ``text``. Defaults to
+            6,000.
+
+    Returns:
+        ``text`` unchanged if it fits, otherwise its first and last ``limit // 2``
+        characters joined by a marker that says how many characters were left out.
+    """
     if len(text) <= limit:
         return text
     half = limit // 2
@@ -85,6 +104,8 @@ def _clip_for_prompt(text: str, limit: int = _PROMPT_EDIT_CHARACTERS) -> str:
 
 
 class ControllerStage(str, Enum):
+    """The named stages of a run, used as stage labels in the trace and the ledger."""
+
     CASE_INGESTION = "case_ingestion"
     FORENSICS = "failure_forensics"
     ARCHITECTURE = "architecture_profile"
@@ -96,6 +117,16 @@ class ControllerStage(str, Enum):
 
 @dataclass(slots=True)
 class ControllerOutcome:
+    """Everything a finished run hands back to the entry point.
+
+    Attributes:
+        result: The official result written to ``agent-result.json``.
+        metrics: Counters and measurements for the run.
+        ledger: Every evidence item and claim recorded during the run.
+        constitution: What is known about the target architecture, as JSON.
+        episode: The run's attempts, probes, observations and contradictions.
+    """
+
     result: AgentResult
     metrics: CaseMetrics
     ledger: EvidenceLedger
@@ -104,6 +135,23 @@ class ControllerOutcome:
 
 
 class RepairController:
+    """Run one Case through forensics, analysis, candidate selection and repair.
+
+    The controller is used once per process: construct it, then call ``run``.
+
+    Attributes:
+        config: The validated runtime settings, including feature flags and limits.
+        workspace: The resolved input, repository and output directories.
+        build_feedback: The provider used for optional build experiments. In hosted
+            mode it is always unavailable.
+        model_router: The budgeted model router, or ``None`` in mock mode.
+        logger: The module logger.
+        path_policy: Decides which repository paths may be read or edited. It is
+            rebuilt from the Case metadata at the start of ``run``.
+        build_budget: Counts build requests against the provider's limit.
+        trace: The execution-trace recorder, created at the start of ``run``.
+    """
+
     def __init__(
         self,
         *,
@@ -112,6 +160,17 @@ class RepairController:
         build_feedback: BuildFeedbackProvider,
         model_router: ModelRouter | None = None,
     ):
+        """Store the run's dependencies and set up a default path policy.
+
+        Args:
+            config: The validated runtime settings.
+            workspace: The resolved workspace directories.
+            build_feedback: The build-feedback provider to use for experiments.
+            model_router: The model router, or ``None`` to run without a model.
+
+        Returns:
+            None.
+        """
         self.config = config
         self.workspace = workspace
         self.build_feedback = build_feedback
@@ -122,15 +181,43 @@ class RepairController:
         self.trace: TraceRecorder | None = None
 
     def _trace(self, stage: str, action: str, **attributes: object) -> None:
+        """Record one trace event, or do nothing if the trace is not set up yet.
+
+        Args:
+            stage: The stage the event belongs to, usually a ``ControllerStage`` value.
+            action: A short event name such as ``candidate_applied``.
+            **attributes: Extra JSON-serializable fields for the event.
+
+        Returns:
+            None.
+        """
         if self.trace is not None:
             self.trace.record(stage, action, **attributes)
 
     def _transition(self, stage: str, **attributes: object) -> None:
+        """Record entry into a new stage, or do nothing if the trace is not set up yet.
+
+        Args:
+            stage: The stage being entered, usually a ``ControllerStage`` value.
+            **attributes: Extra JSON-serializable fields describing the stage.
+
+        Returns:
+            None.
+        """
         if self.trace is not None:
             self.trace.transition(stage, **attributes)
 
     @staticmethod
     def _latest_failure_evidence(ledger: EvidenceLedger) -> EvidenceItem | None:
+        """Find the most recently added evidence item that came from a build or tool.
+
+        Args:
+            ledger: The evidence ledger to search.
+
+        Returns:
+            The newest item of kind build log, compiler output, linker output or tool
+            output, or ``None`` if the ledger has none.
+        """
         return next(
             (
                 item
@@ -147,6 +234,22 @@ class RepairController:
         )
 
     def _seed_ledger(self, case: object, failure: object) -> EvidenceLedger:
+        """Create the evidence ledger and add the Case metadata and primary diagnostic.
+
+        The target-architecture item uses the provided-metadata reliability (0.99)
+        when the architecture is known, and the guess reliability (0.30) when it is
+        not. The primary diagnostic, if there is one, is recorded as compiler output
+        for compilation failures and as build log otherwise, and its evidence ID is
+        appended to ``failure.evidence_ids``.
+
+        Args:
+            case: The loaded Case; must be a ``CaseData``.
+            failure: The forensic analysis of the initial log; must be a
+                ``FailureAnalysis``. Its ``evidence_ids`` list is extended in place.
+
+        Returns:
+            A new ledger holding one or two evidence items.
+        """
         from ..schemas import CaseData, FailureAnalysis
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
@@ -185,6 +288,18 @@ class RepairController:
     def _record_hazards(
         self, ledger: EvidenceLedger, hazards: list[ArchitectureHazard]
     ) -> None:
+        """Add one direct-file-observation evidence item per scanned hazard.
+
+        Each item uses the direct-file reliability, with the hazard's own confidence
+        as its strength, and records the hazard's path and line.
+
+        Args:
+            ledger: The evidence ledger to add to.
+            hazards: The hazards found by the static scan.
+
+        Returns:
+            None.
+        """
         for hazard in hazards:
             ledger.add_evidence(
                 kind=EvidenceKind.DIRECT_FILE_OBSERVATION,
@@ -202,7 +317,20 @@ class RepairController:
     def _semantic_anchors(
         self, ledger: EvidenceLedger, hazards: list[ArchitectureHazard]
     ) -> list[SemanticAnchor]:
-        """Create semantic-preservation questions only from directly observed hazards."""
+        """Extract a semantic anchor for each hazard that supports one.
+
+        Anchors are built only from directly observed hazards, and each is linked to
+        the ledger evidence recorded at the same path and line. The trace records
+        how many anchors passed ``validate_anchor`` and how many still have gaps.
+
+        Args:
+            ledger: The evidence ledger, already holding the hazard evidence.
+            hazards: The hazards to describe.
+
+        Returns:
+            The extracted anchors, or an empty list when the semantic-anchors
+            feature is turned off.
+        """
         if not self.config.features.semantic_anchors:
             return []
         anchors: list[SemanticAnchor] = []
@@ -232,6 +360,29 @@ class RepairController:
         anchors: list[SemanticAnchor],
         ledger: EvidenceLedger,
     ) -> PatchCandidate | None:
+        """Propose making a single rejected x86 compiler flag conditional.
+
+        This applies only to a known non-x86_64 target where exactly one scanned
+        ``compiler_flag`` hazard appears in the primary diagnostic and is an
+        ``-msse``, ``-mavx`` or ``-march=x86`` flag. With semantic anchors on, the
+        hazard also needs an anchor at the same site with no validation gaps, which
+        shows the flag is an optimisation and not package behaviour. Three
+        high-consequence claims are then recorded (flag provenance, target
+        incompatibility, semantics preserved); with claim confidence on, all three
+        must pass the confidence gate.
+
+        Args:
+            case: The loaded Case; must be a ``CaseData``.
+            failure: The current failure analysis; must be a ``FailureAnalysis``.
+            hazards: The scanned architecture hazards.
+            anchors: The semantic anchors extracted for those hazards.
+            ledger: The evidence ledger; the three claims are added to it.
+
+        Returns:
+            A conditional-flag candidate whose confidence is the lowest of the three
+            claim confidences (or a fixed 0.80 when claim confidence is turned off),
+            or ``None`` when any condition is not met.
+        """
         from ..schemas import CaseData, FailureAnalysis
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
@@ -246,7 +397,7 @@ class RepairController:
             for item in hazards
             if item.category == "compiler_flag"
             and item.matched_text.lower() in diagnostic
-            and re.search(r"-m(?:sse|avx)|-march=x86", item.matched_text, re.I)
+            and re.search(r"-m(?:sse|avx)|-march=x86", item.matched_text, re.IGNORECASE)
         ]
         if len(matching_hazards) != 1:
             return None
@@ -310,7 +461,22 @@ class RepairController:
     def _deterministic_rule_candidate(
         self, *, case: object, failure: object, ledger: EvidenceLedger
     ) -> PatchCandidate | None:
-        """Build a candidate only when a generic rule has unique file and log support."""
+        """Turn a matching deterministic repair rule into a gated candidate.
+
+        Each of the rule's edits adds a direct-file-observation evidence item for its
+        expected text, and the latest build-log evidence is added as well. Together
+        they support one high-consequence claim built from the rule's rationale.
+
+        Args:
+            case: The loaded Case; must be a ``CaseData``.
+            failure: The current failure analysis; must be a ``FailureAnalysis``.
+            ledger: The evidence ledger; the evidence and claim are added to it.
+
+        Returns:
+            The rule's candidate, with the claim's confidence (or the rule's own
+            confidence when claim confidence is turned off). ``None`` when no rule
+            matches, or when the claim fails the confidence gate.
+        """
         from ..schemas import CaseData, FailureAnalysis
 
         assert isinstance(case, CaseData) and isinstance(failure, FailureAnalysis)
@@ -355,7 +521,28 @@ class RepairController:
         )
 
     def _model_file_context(self, failure: object, recommended_files: object) -> str:
-        """Read only a small validated set of model-recommended or causal files."""
+        """Collect bounded file excerpts to show the model when it plans a patch.
+
+        Candidate files are, in order: the causal file from the frontier, the files
+        the model recommended, the first four build files, and the first four
+        packaging files (``debian/rules`` first, then ``debian/control``, then
+        ``.install``, ``.symbols``, ``.links`` and ``.dirs`` files). At most eight
+        files are read. A file is skipped if any path part starts with a dot, the
+        path policy rejects it, it is larger than ``MAX_TEXT_FILE_BYTES``, it has a
+        NUL byte in its first 8,192 bytes, or it is not UTF-8. Each file contributes
+        its first 160 lines; for the causal file, when the diagnostic names a line
+        as ``path:line``, the 160-line window is centred on that line instead.
+
+        Args:
+            failure: The current failure analysis; must be a ``FailureAnalysis``.
+            recommended_files: The ``recommended_files`` value from the model's
+                failure analysis. Only string entries of a list are used; anything
+                else is ignored.
+
+        Returns:
+            The selected excerpts formatted as one string of at most 24,000
+            characters, or an empty string when no file could be read.
+        """
         from ..schemas import FailureAnalysis
 
         assert isinstance(failure, FailureAnalysis)
@@ -427,7 +614,28 @@ class RepairController:
         return select_snippets(snippets, max_characters=24_000)
 
     def _model_causal_findings(self, failure: object, candidate: object) -> list[str]:
-        """Reject plans that add an alternative but leave a diagnosed flag active."""
+        """List the ways a model plan fails to deal with the diagnosed compiler options.
+
+        Architecture options named in the primary diagnostic (``-msse*``, ``-mavx*``,
+        ``-mneon``, and ``-march=``, ``-mcpu=``, ``-mtune=``, ``-mabi=`` or ``-mfpu=``
+        values) are searched for in the repository, up to 20 matches each. Every
+        file that contains one must be changed by a ``replace_lines`` edit whose
+        expected text includes that option; this catches plans that add a guarded
+        copy but leave the original declaration active. If the replacement still
+        contains the option, it must sit behind a guard, the guard must come from
+        the compiler target or a capability check (for example ``-dumpmachine`` or
+        ``check_c_compiler_flag``), and it must not compare the full target triple
+        to a bare ``x86_64`` or ``amd64`` with ``$(filter ...)``.
+
+        Args:
+            failure: The current failure analysis; must be a ``FailureAnalysis``.
+            candidate: The model-planned candidate to check; must be a
+                ``PatchCandidate``.
+
+        Returns:
+            Human-readable findings, one per problem. An empty list means the plan
+            handles every diagnosed option.
+        """
         from ..schemas import FailureAnalysis, PatchCandidate
 
         assert isinstance(failure, FailureAnalysis) and isinstance(
@@ -439,7 +647,7 @@ class RepairController:
                     r"(?<![A-Za-z0-9_])-(?:m(?:sse[0-9.]*|avx[0-9.]*|neon)\b|"
                     r"(?:march|mcpu|mtune|mabi|mfpu)=[^\s'\"`]+)",
                     failure.primary_diagnostic,
-                    flags=re.I,
+                    flags=re.IGNORECASE,
                 )
             )
         )
@@ -502,6 +710,35 @@ class RepairController:
     def _consult_model_if_configured(
         self, case: object, failure: object, ledger: EvidenceLedger
     ) -> PatchCandidate | None:
+        """Ask the model to analyse the failure and plan a repair, then gate the plan.
+
+        The failure-analysis call gets the architectures, the primary diagnostic and
+        the causal log excerpt, plus up to 32,000 characters of the normalised log
+        in ``raw_context`` mode. Up to ten of its claims are recorded as
+        medium-consequence LLM claims. The patch-planning call then sees only the
+        validated file context from ``_model_file_context``. A plan that fails
+        structural validation, ``_model_causal_findings`` or either critic is
+        retried once with the findings quoted in the prompt. An accepted plan adds
+        a high-consequence causal claim, supported by the model, the validated edit
+        preconditions and the build log, plus one medium-consequence claim per
+        stated assumption. Every one of those claims must pass the confidence gate,
+        whatever the claim-confidence feature flag says.
+
+        Args:
+            case: The loaded Case; must be a ``CaseData``.
+            failure: The current failure analysis; must be a ``FailureAnalysis``.
+            ledger: The evidence ledger; model evidence and claims are added to it.
+
+        Returns:
+            The model-planned candidate, with its confidence capped at 0.85 and its
+            edits tied to the causal and assumption claims. ``None`` when there is
+            no model router, no file context could be read, both plans were
+            rejected, or a claim failed the gate.
+
+        Raises:
+            ModelError: If a model call fails or returns an invalid answer.
+            BudgetExhaustedError: If the router's call or token budget runs out.
+        """
         if self.model_router is None:
             return None
         from ..schemas import CaseData, FailureAnalysis
@@ -709,7 +946,18 @@ class RepairController:
         return candidate
 
     def _mark_model_patch_applied(self, candidate_id: str) -> None:
-        """Attribute a model patch only after every critic accepts and the edit is applied."""
+        """Mark the latest patch-planning call as the cause of an applied patch.
+
+        Called only after the candidate has passed both critics and been applied,
+        so a model plan that was rejected or failed to apply is never credited.
+        Candidates whose ID does not start with ``candidate-model-`` are ignored.
+
+        Args:
+            candidate_id: The ID of the candidate that was just applied.
+
+        Returns:
+            None.
+        """
         if self.model_router is None or not candidate_id.startswith("candidate-model-"):
             return
         record = next(
@@ -730,7 +978,23 @@ class RepairController:
         episode: EpisodeMemory,
         ledger: EvidenceLedger,
     ) -> None:
-        """Run one bounded static search when it can discriminate an ambiguous atomic cause."""
+        """Search the repository for atomic-symbol definitions on atomic failures.
+
+        The probe runs only when the active-probes feature is on and the primary
+        diagnostic mentions "atomic". It searches for ``__atomic*`` and
+        ``atomic_compare_exchange`` (up to 20 matches), which helps tell a missing
+        ``-latomic`` apart from project-defined atomic helpers. The match locations
+        are recorded as heuristic static-analysis evidence; hypothesis scores are
+        not changed.
+
+        Args:
+            failure: The initial failure analysis; must be a ``FailureAnalysis``.
+            episode: The episode memory; the probe is appended to its ``probes``.
+            ledger: The evidence ledger; the search result is added to it.
+
+        Returns:
+            None.
+        """
         from ..schemas import FailureAnalysis
 
         assert isinstance(failure, FailureAnalysis)
@@ -788,6 +1052,38 @@ class RepairController:
         ledger: EvidenceLedger,
         excluded_families: set[RepairFamily] | None = None,
     ) -> PatchCandidate | None:
+        """Pick the next repair candidate, trying rules first and the model last.
+
+        With repair rules on, a deterministic rule candidate is tried first and the
+        conditional-flag repair second; either is dropped if its family is
+        excluded. In hosted mode a rule candidate is then sent to the model for
+        critique. The rule candidate is kept when the critique call fails, when the
+        critique accepts it, and when the critique rejects it but the model offers
+        no admissible alternative; only a model plan that passes every gate and is
+        not in an excluded family replaces it. Outside hosted mode no critique is
+        requested. When there is no rule candidate and a model router exists, the
+        model is asked to plan a repair from scratch.
+
+        Args:
+            case: The loaded Case; must be a ``CaseData``.
+            failure: The current failure analysis; must be a ``FailureAnalysis``.
+            hazards: The current architecture hazards.
+            anchors: The semantic anchors for those hazards.
+            ledger: The evidence ledger; candidate evidence and claims are added
+                to it.
+            excluded_families: Repair families that build feedback has already
+                contradicted. ``None`` means nothing is excluded.
+
+        Returns:
+            The chosen candidate, or ``None`` when no admissible candidate exists.
+
+        Raises:
+            ModelError: In hosted mode only, if there was no admissible rule
+                candidate and a model call fails while planning a repair. The run
+                must then exit nonzero, as the hosted contract requires.
+            BudgetExhaustedError: In the same hosted-mode situation, if the model
+                budget runs out.
+        """
         excluded = excluded_families or set()
         candidate = None
         if self.config.features.repair_rules:
@@ -829,8 +1125,9 @@ class RepairController:
                     ),
                 )
             except (ModelError, BudgetExhaustedError) as exc:
-                # A transient hosted-model failure must not discard an already
-                # validated deterministic repair; keep it and make no new calls.
+                # A transient hosted-model failure must not throw away a deterministic
+                # repair that already passed its own gates, so keep it and make no
+                # further model calls.
                 self._trace(
                     ControllerStage.REPAIR.value,
                     "model_critique_unavailable",
@@ -864,8 +1161,8 @@ class RepairController:
                     if alternative is not None and alternative.repair_family not in excluded:
                         candidate = alternative
                     else:
-                        # No usable model alternative: the deterministic rule
-                        # candidate remains the best-supported repair.
+                        # The model gave no usable alternative, so the rule candidate
+                        # is still the best-supported repair and overrides the rejection.
                         candidate = deterministic
                         self._trace(
                             ControllerStage.REPAIR.value,
@@ -913,6 +1210,20 @@ class RepairController:
     def _feedback_failure(
         self, feedback: object, ledger: EvidenceLedger
     ) -> FailureAnalysis:
+        """Analyse the log from a build experiment and record its diagnostic.
+
+        The provider's own frontier replaces the one derived from the log. The new
+        primary diagnostic is recorded with the tool-result reliability, as compiler
+        or linker output when the family says so and as build log otherwise.
+
+        Args:
+            feedback: The build experiment's result; must be a
+                ``BuildFeedbackResult``.
+            ledger: The evidence ledger to add the diagnostic to.
+
+        Returns:
+            The failure analysis of the new log, carrying the new evidence ID.
+        """
         assert isinstance(feedback, BuildFeedbackResult)
         failure = analyze_build_log(feedback.raw_log)
         failure.frontier = feedback.frontier
@@ -934,6 +1245,20 @@ class RepairController:
     def _mark_model_patch_outcome(
         self, candidate_id: str, movement: FrontierMovement
     ) -> None:
+        """Record whether an applied model patch moved the failure frontier forward.
+
+        Only candidates whose ID starts with ``candidate-model-`` are considered.
+        The most recent model call that caused a patch is marked as improving the
+        frontier for progress, partial progress or success, and as not improving
+        it otherwise.
+
+        Args:
+            candidate_id: The ID of the candidate that was built.
+            movement: How the frontier moved in the build experiment.
+
+        Returns:
+            None.
+        """
         if self.model_router is None or not candidate_id.startswith("candidate-model-"):
             return
         record = next(
@@ -950,7 +1275,23 @@ class RepairController:
     def _compare_build_feedback(
         self, before: object, after: object, *, success: bool
     ) -> FrontierMovement:
-        """Compare experiments with or without the ordered-frontier research component."""
+        """Classify how a build experiment changed the failure.
+
+        With the failure-frontier feature on, the ordered stage comparison from
+        ``compare_frontiers`` is used. With it off (an ablation), only the error
+        signatures are compared.
+
+        Args:
+            before: The frontier before the repair; must be a ``FailureFrontier``.
+            after: The frontier reported by the build experiment; must be a
+                ``FailureFrontier``.
+            success: Whether the build experiment succeeded.
+
+        Returns:
+            ``SUCCESS`` when the build succeeded. Otherwise the result of
+            ``compare_frontiers``, or, with the feature off, ``INEFFECTIVE`` for an
+            unchanged signature and ``PARTIAL_PROGRESS`` for a changed one.
+        """
         from ..schemas import FailureFrontier
 
         assert isinstance(before, FailureFrontier) and isinstance(
@@ -965,7 +1306,33 @@ class RepairController:
         return FrontierMovement.PARTIAL_PROGRESS
 
     def run(self) -> ControllerOutcome:
-        """Run deterministic analysis, evidence-gated repair, and optional build experiment."""
+        """Run the whole pipeline for the Case and write the diagnostic outputs.
+
+        The stages are: load the Case and inventory the repository; analyse the
+        build log; scan hazards, extract semantic anchors and assess familiarity;
+        build the hypotheses and delta graph and run the atomic-symbol probe; then
+        pick, review and apply candidates. A candidate that fails the portability
+        or policy critic, or an edit precondition, stops the loop with nothing
+        applied. Without build feedback (always the case in hosted mode) the loop
+        ends after the first applied repair. With build feedback, a regression or
+        no-change result rolls the edit back and excludes its repair family,
+        progress keeps the edit and looks for another candidate, and success stops,
+        all within ``max_repair_attempts`` and the build-request budget. Finally the
+        evidence ledger, architecture constitution, repair episode and metrics are
+        written to the output directory.
+
+        Returns:
+            The outcome, whose result always has status ``"completed"``, a message
+            explaining what happened, and the sorted paths of the retained edits
+            (empty when nothing was changed).
+
+        Raises:
+            CaseFormatError: If the Case metadata cannot be read or is malformed.
+            ModelError: In hosted mode, if no admissible rule candidate exists and a
+                model call fails, so that the process exits nonzero.
+            BudgetExhaustedError: In the same hosted-mode situation, if the model
+                budget runs out.
+        """
         case = load_case(self.workspace)
         self.path_policy = PathPolicy.from_metadata(self.workspace.repo, case.metadata)
         self.trace = TraceRecorder(

@@ -1,4 +1,10 @@
-"""Atomic structured text edits guarded by content, hash, path, and binary checks."""
+"""Apply a patch candidate's edits to the worktree all at once, and roll them back.
+
+Each edit names the exact text it expects to find. Every edit is checked in memory
+against the path policy, the file hash, UTF-8 decoding and a binary check before any
+file is written, and each file is then replaced through a temporary file and an atomic
+rename.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +21,31 @@ from ..workspace.path_policy import PathPolicy
 
 
 def sha256(data: bytes) -> str:
+    """Return the SHA-256 digest of some bytes.
+
+    Args:
+        data: The bytes to hash.
+
+    Returns:
+        The digest as a lowercase hex string.
+    """
     return hashlib.sha256(data).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
 class AppliedEdit:
+    """Record of one file written by ``apply_candidate``, kept so it can be undone.
+
+    Attributes:
+        path: Absolute path of the edited file.
+        relative_path: The path as given in the planned edit, relative to the repository.
+        before: The file's original bytes, or None if the edit created the file.
+        after_hash: SHA-256 of the bytes that were written.
+        before_hash: SHA-256 of the original bytes, or None for a created file.
+        changed_line_start: First changed line, counted from 1.
+        changed_line_end: Last changed line, counted from 1.
+    """
+
     path: Path
     relative_path: str
     before: bytes | None
@@ -31,11 +57,33 @@ class AppliedEdit:
 
 @dataclass(slots=True)
 class EditTransaction:
+    """The set of files written by one ``apply_candidate`` call.
+
+    Attributes:
+        edits: The applied edits, in the order they were written.
+        committed: True while the edits are in place. ``rollback_transaction`` sets it
+            to False once they have been reverted.
+    """
+
     edits: list[AppliedEdit]
     committed: bool = True
 
 
 def _decode_text(data: bytes, path: Path) -> str:
+    """Decode file bytes as UTF-8 text, refusing binary content.
+
+    A NUL byte in the first 8 KiB is treated as a sign of a binary file.
+
+    Args:
+        data: The file's bytes.
+        path: The file path, used only in error messages.
+
+    Returns:
+        The decoded text.
+
+    Raises:
+        PatchValidationError: If the data looks binary or is not valid UTF-8.
+    """
     if b"\x00" in data[:8192]:
         raise PatchValidationError(f"binary text edit rejected: {path}")
     try:
@@ -45,6 +93,26 @@ def _decode_text(data: bytes, path: Path) -> str:
 
 
 def _apply_operation(edit: PlannedEdit, original: str) -> tuple[str, int, int]:
+    """Compute a file's new text for one planned edit, without writing anything.
+
+    The expected and replacement text are converted to the file's own line endings
+    (CRLF, CR or LF, chosen by what the file already uses), so an edit written with
+    LF still matches a CRLF file and does not mix line endings into it.
+
+    Args:
+        edit: The edit to apply. Its operation is ``create_file``, ``replace_lines``,
+            ``insert_before`` or ``insert_after``.
+        original: The file's current text; empty for a file that does not exist yet.
+
+    Returns:
+        A tuple of the new text and the first and last changed line numbers,
+        counted from 1.
+
+    Raises:
+        PatchValidationError: If ``create_file`` targets a non-empty file, the edit has
+            no ``expected_text``, the expected text does not occur exactly once, or the
+            operation is not supported.
+    """
     if edit.operation == "create_file":
         if original:
             raise PatchValidationError(f"create_file target already contains data: {edit.path}")
@@ -75,6 +143,26 @@ def _apply_operation(edit: PlannedEdit, original: str) -> tuple[str, int, int]:
 
 
 def _atomic_write(path: Path, data: bytes, mode: int | None) -> None:
+    """Replace a file's content through a temporary file and an atomic rename.
+
+    The temporary file is created in the same directory so ``os.replace`` stays on one
+    file system, and it is flushed and fsynced before the rename. Readers see either
+    the old file or the new one, never a partly written file.
+
+    Args:
+        path: The file to write. Its parent directory may be created, but not
+            grandparents.
+        data: The complete new content.
+        mode: Permission bits to copy onto the new file, or None to keep the
+            temporary file's default.
+
+    Returns:
+        None.
+
+    Raises:
+        OSError: If the directory cannot be created or the file cannot be written
+            or renamed. The temporary file is removed in that case.
+    """
     path.parent.mkdir(parents=False, exist_ok=True)
     descriptor, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(temp_name)
@@ -92,7 +180,27 @@ def _atomic_write(path: Path, data: bytes, mode: int | None) -> None:
 
 
 def apply_candidate(candidate: PatchCandidate, path_policy: PathPolicy) -> EditTransaction:
-    """Validate every operation in memory, then atomically write the complete candidate."""
+    """Apply every edit in a candidate, or none of them.
+
+    All edits are checked in memory first: the path must pass the path policy, each
+    file may be touched by only one edit, ``create_file`` must not hit an existing
+    file, an ``expected_hash`` must match the current bytes, and the expected text
+    must occur exactly once. Only then are the files written. If a write fails, the
+    files already written are rolled back.
+
+    Args:
+        candidate: The proposed repair whose edits should be written.
+        path_policy: Decides which repository paths may be changed.
+
+    Returns:
+        A transaction recording each file's old content and new hash, so the change
+        can be rolled back later.
+
+    Raises:
+        PathPolicyError: If an edit's path is not allowed.
+        PatchValidationError: If any edit fails a check above, a file is binary or
+            not UTF-8, two edits target the same file, or a write fails.
+    """
     prepared: list[tuple[Path, str, bytes | None, bytes, int, int, int | None]] = []
     seen: set[Path] = set()
     for edit in candidate.planned_edits:
@@ -124,7 +232,25 @@ def apply_candidate(candidate: PatchCandidate, path_policy: PathPolicy) -> EditT
 
 
 def rollback_transaction(transaction: EditTransaction) -> None:
-    """Revert only files still matching this transaction's recorded after-hash."""
+    """Undo a transaction, restoring each file's original content.
+
+    Files are restored in reverse order. Before touching a file, its current hash is
+    compared with the hash recorded when it was written, so a file changed by someone
+    else since then is never overwritten. Created files are deleted. Calling this on
+    a transaction that was already rolled back does nothing.
+
+    Args:
+        transaction: The transaction returned by ``apply_candidate``. Its
+            ``committed`` flag is set to False on success.
+
+    Returns:
+        None.
+
+    Raises:
+        PatchValidationError: If a file is missing or no longer matches the content
+            this transaction wrote. Files later in the edit list may already have
+            been restored when this happens.
+    """
     if not transaction.committed:
         return
     for edit in reversed(transaction.edits):

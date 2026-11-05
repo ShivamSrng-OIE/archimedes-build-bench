@@ -1,1 +1,2 @@
-"""Hypothesis portfolios, active probe selection, ranking, and control flow."""
+"""Decision-making for one repair run: the controller state machine, initial causal
+hypotheses, and deterministic candidate ranking."""

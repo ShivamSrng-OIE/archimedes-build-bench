@@ -1,4 +1,8 @@
-"""Budgeted FAST/STRONG routing with explicit bounded escalation conditions."""
+"""Choose the FAST or STRONG model tier for each call and enforce the run's budgets.
+
+Every call is checked against the call, strong-call, token and optional cost
+limits before it is sent, and its usage is recorded afterwards.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,26 @@ from .openai_compatible import OpenAICompatibleModelClient
 
 @dataclass(slots=True)
 class EscalationSignals:
+    """Reasons a call may need the STRONG tier.
+
+    Any single true field is enough to escalate. With no signals the call uses
+    the FAST tier. The controller currently sets only ``ood_without_evidence``,
+    for patch planning when the target architecture is unknown.
+
+    Attributes:
+        critical_confidence_low: A claim the repair depends on has low
+            confidence.
+        high_hypothesis_entropy: Several hypotheses remain about equally likely.
+        sample_disagreement: Earlier model answers disagree with each other.
+        semantic_anchor_unknown: The purpose of a hazard construct is unclear.
+        novel_multi_file_repair: The repair would touch several files in a way
+            no rule covers.
+        unexplained_previous_failure: An earlier attempt failed for an unknown
+            reason.
+        ood_without_evidence: The target architecture is unfamiliar and there
+            is little evidence about it.
+    """
+
     critical_confidence_low: bool = False
     high_hypothesis_entropy: bool = False
     sample_disagreement: bool = False
@@ -21,6 +45,11 @@ class EscalationSignals:
     ood_without_evidence: bool = False
 
     def requires_strong(self) -> bool:
+        """Tell whether any escalation signal is set.
+
+        Returns:
+            True if at least one field is true.
+        """
         return any((
             self.critical_confidence_low, self.high_hypothesis_entropy,
             self.sample_disagreement, self.semantic_anchor_unknown,
@@ -31,6 +60,17 @@ class EscalationSignals:
 
 @dataclass(slots=True)
 class ModelRouter:
+    """Send model calls through one client while enforcing the usage budget.
+
+    Attributes:
+        client: The model client that performs the requests.
+        budget: Call, token and cost limits plus the usage so far.
+        timeout_seconds: Socket timeout for each request.
+        forced_tier: Tier pinned by ``ARCHIMEDES_MODEL_TIER``, or ``None`` to
+            choose per call.
+        records: One metrics record per completed call, in order.
+    """
+
     client: ModelClient
     budget: UsageBudget
     timeout_seconds: float
@@ -45,6 +85,27 @@ class ModelRouter:
         user_prompt: str,
         signals: EscalationSignals | None = None,
     ) -> ModelResponse:
+        """Pick a tier, check the budget, make the call and record its usage.
+
+        When at least two requests remain in the budget, two are reserved so
+        the client may send one JSON repair retry; otherwise only one is
+        reserved and the retry is turned off.
+
+        Args:
+            task: The reasoning job to perform.
+            system_prompt: Task instructions for the model.
+            user_prompt: Case-specific context for the model.
+            signals: Escalation signals for this call, or ``None`` for none.
+
+        Returns:
+            The client's validated response.
+
+        Raises:
+            BudgetExhaustedError: If the call would exceed the call,
+                strong-call, token or cost limit.
+            ModelError: If the client's request fails.
+            ModelProtocolError: If the answer breaks its JSON contract.
+        """
         tier = self.forced_tier or (
             ModelTier.STRONG if signals and signals.requires_strong() else ModelTier.FAST
         )
@@ -83,7 +144,18 @@ class ModelRouter:
 
 
 def create_runtime_router(config: RuntimeConfig) -> ModelRouter | None:
-    """Construct real local/remote adapters; mock fixtures are injected by tests explicitly."""
+    """Create the model router described by the configuration.
+
+    Tests that need a scripted model build their own ``ModelRouter`` with a
+    fake client; nothing here creates one.
+
+    Args:
+        config: The runtime configuration.
+
+    Returns:
+        A router backed by ``OpenAICompatibleModelClient``, or ``None`` when the
+        backend is ``mock`` and the run should use no model at all.
+    """
     if config.model_backend is ModelBackend.MOCK:
         return None
     client = OpenAICompatibleModelClient(

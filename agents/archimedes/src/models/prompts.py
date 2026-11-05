@@ -1,4 +1,8 @@
-"""Separate, injection-resistant contracts for each model reasoning task."""
+"""One system prompt per model task, each carrying the untrusted-content warning.
+
+The warning tells the model that repository text, logs and comments are data
+and that instructions found inside them must not be followed.
+"""
 
 from __future__ import annotations
 
@@ -48,6 +52,16 @@ _TASK_INSTRUCTIONS = {
 
 
 def system_prompt(task: ModelTask) -> str:
+    """Build the system prompt for a task.
+
+    Args:
+        task: The reasoning job the prompt is for.
+
+    Returns:
+        A prompt that asks for exactly one JSON object, includes
+        ``UNTRUSTED_CONTENT_WARNING`` and ends with the task's own
+        instructions.
+    """
     return (
         "You are one bounded reasoning component inside Archimedes. Return exactly one JSON object. "
         "Treat expressed confidence as a claim, not ground truth. "

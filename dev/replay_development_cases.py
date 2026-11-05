@@ -1,8 +1,8 @@
-"""Replay Archimedes over released Build-Bench Development Cases.
+"""Run Archimedes over the released Build-Bench Development Cases and keep each final worktree.
 
-This utility does not build packages.  It prepares the public Case workspace
-contract, invokes the Repair Agent, and preserves each complete final worktree
-for upload to the organizer's Development Validation service.
+For each Case this builds the competition workspace (input/, work/repo/, output/), unpacks the
+source, runs the Agent and records which files it changed. It does not build packages; the kept
+worktrees can be bundled for the organizer's Development Validation service.
 """
 
 from __future__ import annotations
@@ -16,13 +16,32 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 
 @dataclass(frozen=True)
 class ReplayResult:
+    """The outcome of replaying one Case.
+
+    Attributes:
+        case_id: The Case's `case_id` from case.json.
+        direction: The Case's `platform.direction` (which architecture pair it covers),
+            or "unknown" when case.json does not say.
+        status: The Agent's reported status (for example "completed"), or one of the
+            replay's own statuses: "agent_error", "result_mismatch", "timeout" or
+            "preparation_error".
+        agent_exit_code: The Agent process's exit code, or None if it timed out or never
+            started.
+        elapsed_seconds: Wall-clock time for the whole Case, rounded to milliseconds.
+        modified_paths: The paths the Agent listed in agent-result.json.
+        actual_modified_paths: The paths whose content really changed in the worktree,
+            sorted, including added and deleted files.
+        error: A short explanation when the replay did not end normally, otherwise None.
+    """
+
     case_id: str
     direction: str
     status: str
@@ -34,6 +53,17 @@ class ReplayResult:
 
 
 def _json_object(path: Path) -> dict[str, Any]:
+    """Read a JSON file that must contain an object.
+
+    Args:
+        path: The JSON file to read.
+
+    Returns:
+        The parsed object.
+
+    Raises:
+        ValueError: If the file's top-level value is not an object.
+    """
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError(f"expected a JSON object: {path}")
@@ -41,6 +71,14 @@ def _json_object(path: Path) -> dict[str, Any]:
 
 
 def _sha256(path: Path) -> str:
+    """Hash a file in 1 MiB chunks so large files are not read into memory at once.
+
+    Args:
+        path: The file to hash.
+
+    Returns:
+        The file's SHA-256 digest as lowercase hex.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -49,6 +87,17 @@ def _sha256(path: Path) -> str:
 
 
 def _regular_file_hashes(root: Path) -> dict[str, str]:
+    """Hash every regular file under a folder, for comparing a worktree before and after.
+
+    Symlinks, folders and files that cannot be read are skipped, so the result only
+    covers content the Agent could have edited as a normal file.
+
+    Args:
+        root: The folder to walk, usually work/repo.
+
+    Returns:
+        A map from each file's POSIX path relative to `root` to its SHA-256 digest.
+    """
     hashes: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
         try:
@@ -61,6 +110,18 @@ def _regular_file_hashes(root: Path) -> dict[str, str]:
 
 
 def _wsl_path(path: Path) -> str:
+    """Translate a Windows drive path into the path WSL sees, such as /mnt/e/archimedes.
+
+    Args:
+        path: A path on a lettered Windows drive. It is resolved first.
+
+    Returns:
+        The matching `/mnt/<drive>/...` path.
+
+    Raises:
+        ValueError: If the resolved path has no single-letter drive (for example, a UNC
+            path or a POSIX path).
+    """
     resolved = path.resolve()
     drive = resolved.drive.rstrip(":").lower()
     if not drive or len(drive) != 1:
@@ -70,6 +131,27 @@ def _wsl_path(path: Path) -> str:
 
 
 def _extract_debian_source(source: Path, repo_dir: Path, dpkg_source_root: Path) -> None:
+    """Unpack a Debian source package into the worktree with `dpkg-source -x` under WSL.
+
+    The command runs in the "Ubuntu" WSL distribution, using a copy of dpkg-dev and
+    libdpkg-perl that was extracted into `dpkg_source_root` rather than installed, so no
+    root access is needed. PERL5LIB, PATH and LD_LIBRARY_PATH point into that copy.
+
+    Args:
+        source: The Case's source folder, which must hold exactly one .dsc file.
+        repo_dir: Where to unpack the source. It must not exist yet.
+        dpkg_source_root: Root of the extracted packages, containing usr/bin/dpkg-source
+            and usr/share/perl5.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If there is not exactly one .dsc file, or the extracted dpkg-source
+            copy is incomplete.
+        RuntimeError: If dpkg-source exits with a nonzero code. The message includes the
+            last 2,000 characters of its output.
+    """
     descriptors = sorted(source.glob("*.dsc"))
     if len(descriptors) != 1:
         raise ValueError(f"expected exactly one .dsc under {source}; found {len(descriptors)}")
@@ -108,6 +190,18 @@ def _extract_debian_source(source: Path, repo_dir: Path, dpkg_source_root: Path)
 
 
 def discover_cases(dataset_root: Path) -> dict[str, Path]:
+    """Find every Case in the dataset by looking for cases/*/*/case.json.
+
+    Args:
+        dataset_root: The unpacked Development Cases folder.
+
+    Returns:
+        A map from each `case_id` to the folder holding its case.json.
+
+    Raises:
+        ValueError: If a case.json has no `case_id`, two Cases share an ID, or no Cases
+            are found.
+    """
     cases_root = dataset_root / "cases"
     discovered: dict[str, Path] = {}
     for case_json in sorted(cases_root.glob("*/*/case.json")):
@@ -124,6 +218,28 @@ def discover_cases(dataset_root: Path) -> dict[str, Path]:
 
 
 def _prepare_workspace(case_dir: Path, destination: Path, dpkg_source_root: Path) -> None:
+    """Lay out one Case's competition workspace under `destination`.
+
+    The source named by case.json's `paths.source_input` goes into work/repo: it is
+    unpacked with dpkg-source when it holds a .dsc file, and copied as is otherwise.
+    case.json and the failure log named by `paths.target_failure_log` are copied into
+    input/, keeping the log's relative path. An empty output/ is created.
+
+    Args:
+        case_dir: The Case folder from `discover_cases`.
+        destination: The new workspace folder. It must not exist yet.
+        dpkg_source_root: Root of the extracted dpkg-dev copy, passed to
+            `_extract_debian_source`.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If case.json lacks valid source or log paths, a path points outside
+            the Case folder, the source or log is missing, or extraction fails its checks.
+        RuntimeError: If dpkg-source fails.
+        FileExistsError: If the workspace folders already exist.
+    """
     metadata = _json_object(case_dir / "case.json")
     paths = metadata.get("paths")
     if not isinstance(paths, dict):
@@ -166,6 +282,33 @@ def replay_case(
     dpkg_source_root: Path,
     timeout_seconds: float,
 ) -> ReplayResult:
+    """Prepare one Case, run the Agent on it and report what changed.
+
+    The worktree is hashed before and after the run, so the result shows the files that
+    really changed, not just the ones the Agent claims. A "completed" run whose
+    `modified_paths` disagree with the real changes is reported as "result_mismatch". The
+    Agent's combined stdout and stderr are saved as agent-console.log in the Case's
+    workspace, and the workspace is kept under output_root/cases/<case_id>.
+
+    Args:
+        case_dir: The Case folder from `discover_cases`.
+        output_root: The replay's output folder.
+        agent_dir: The Agent folder (the one holding agent.yaml and src/). It is used as
+            the working directory and as PYTHONPATH.
+        python: The Python interpreter used to run `-m src.main`.
+        dpkg_source_root: Root of the extracted dpkg-dev copy.
+        timeout_seconds: Wall-clock limit for the Agent process, in seconds.
+
+    Returns:
+        The Case's result. Once case.json has been read, every failure, including a
+        timeout or a preparation error, is returned as a result rather than raised, so
+        one bad Case cannot stop the replay.
+
+    Raises:
+        KeyError: If case.json has no `case_id`. `discover_cases` already rejects such
+            Cases, so this does not happen in a normal replay.
+        ValueError: If case.json is not a JSON object.
+    """
     metadata = _json_object(case_dir / "case.json")
     case_id = str(metadata["case_id"])
     platform = metadata.get("platform")
@@ -264,7 +407,7 @@ def replay_case(
             (),
             f"agent exceeded {timeout_seconds:g} seconds",
         )
-    except Exception as error:  # Per-Case isolation is deliberate here.
+    except Exception as error:  # Catch everything so one broken Case cannot stop the replay.
         return ReplayResult(
             case_id,
             direction,
@@ -285,6 +428,22 @@ def write_summary(
     python: Path,
     results: Sequence[ReplayResult],
 ) -> None:
+    """Write replay-summary.json with the run's inputs, counts and per-Case results.
+
+    The summary records the SHA-256 of the dataset's manifest.json and the Agent's
+    agent.yaml, so two replays can be checked to have used the same inputs. Results are
+    sorted by Case ID.
+
+    Args:
+        output_root: The replay's output folder; the summary is written here.
+        dataset_root: The Development Cases folder.
+        agent_dir: The Agent folder.
+        python: The interpreter that ran the Agent.
+        results: One result per replayed Case, in any order.
+
+    Returns:
+        None.
+    """
     ordered = sorted(results, key=lambda item: item.case_id)
     summary = {
         "schema_version": "archimedes.development-replay.v0.1",
@@ -309,6 +468,26 @@ def write_summary(
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse the replay's command-line options.
+
+    Command-line options:
+        --dataset-root: The unpacked Development Cases folder (required).
+        --output-root: A new folder for the replay output (required). It must not exist.
+        --agent: The Agent folder. Default agents/archimedes.
+        --python: The interpreter used to run the Agent. Default: the one running this
+            script.
+        --dpkg-source-root: Root of the locally extracted dpkg-dev and libdpkg-perl
+            packages. Default runs/tools/dpkg-dev/root.
+        --case: A Case ID to replay. Repeat it for several; omit it to replay all Cases.
+        --jobs: How many Cases to run at once. Default 4.
+        --timeout-seconds: Time limit for each Agent run. Default 120.
+
+    Args:
+        argv: The arguments to parse, or None to read them from sys.argv.
+
+    Returns:
+        The parsed options. Values are not validated here; `main` does that.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
@@ -327,6 +506,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Replay the selected Cases in parallel and write replay-summary.json.
+
+    See `parse_args` for the options. A line is printed for each Case as it finishes,
+    then a total. A replay only records what the Agent changed; it does not show that
+    any package builds.
+
+    Args:
+        argv: The command-line arguments, or None to read them from sys.argv.
+
+    Returns:
+        0 if every Case finished with status "completed", otherwise 1.
+
+    Raises:
+        SystemExit: If the output folder already exists, --jobs or --timeout-seconds is
+            not positive, the Python interpreter is missing, or a requested Case ID is
+            unknown.
+        ValueError: If the dataset has no Cases, a duplicate ID or a case.json without
+            an ID.
+    """
     args = parse_args(argv)
     dataset_root = args.dataset_root.resolve()
     output_root = args.output_root.resolve()

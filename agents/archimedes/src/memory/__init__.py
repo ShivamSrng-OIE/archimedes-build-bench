@@ -1,1 +1,1 @@
-"""Per-case episode state and offline generic-rule retrieval."""
+"""Working memory for a single run; nothing is kept between Cases."""

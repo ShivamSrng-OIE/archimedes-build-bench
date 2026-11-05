@@ -1,3 +1,5 @@
+"""Tests for dev/replay_development_cases.py, which runs the Agent over local dev Cases."""
+
 from __future__ import annotations
 
 import json
@@ -10,7 +12,14 @@ from dev.replay_development_cases import discover_cases, replay_case, write_summ
 
 
 class DevelopmentReplayTests(unittest.TestCase):
+    """Check Case discovery, a single replay and the replay summary."""
+
     def test_replay_preserves_complete_modified_worktree_and_summary(self) -> None:
+        """Check that a replay keeps the edited worktree and counts the Case in the summary.
+
+        A stub Agent edits hello.txt; the edit, its modified path and the summary
+        counts must all survive so later tools can bundle and score the result.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             dataset = root / "dataset"

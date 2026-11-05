@@ -1,3 +1,9 @@
+"""Tests that run each deterministic repair rule against small, realistic repositories.
+
+Each test builds a workspace with a failure log and package files, runs the
+controller without build feedback, and checks which files changed and how.
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,13 +19,19 @@ from src.workspace.paths import WorkspacePaths
 
 from .support import make_workspace, runtime_config
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_CASES = ROOT / "dev" / "synthetic_cases"
 
 
 class SyntheticRepairTests(unittest.TestCase):
+    """Check the deterministic rules end to end, including when they must fail closed."""
+
     def test_autoconf_removes_only_x86_flags_rejected_by_arm_compiler(self) -> None:
+        """Check that only the -msse, -msse2 and -mfpmath=sse flags gcc rejected leave configure.ac.
+
+        Other flags on the same continued line stay, and the generated configure script
+        is left alone because it is rebuilt from configure.ac.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -65,6 +77,10 @@ class SyntheticRepairTests(unittest.TestCase):
             self.assertIn("-msse", generated.read_text(encoding="utf-8"))
 
     def test_autoconf_rejected_x86_flags_require_one_causal_source_line(self) -> None:
+        """Check that nothing is edited when the rejected flag appears on two configure.ac lines.
+
+        The rule needs exactly one causal line; with two it cannot tell which one to fix.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -93,6 +109,10 @@ class SyntheticRepairTests(unittest.TestCase):
             self.assertEqual(configure.read_text(encoding="utf-8"), original)
 
     def test_debian_multiarch_path_uses_target_triplet_from_dpkg_architecture(self) -> None:
+        """Check that a hard-coded x86_64-linux-gnu path in debian/rules uses DEB_HOST_MULTIARCH.
+
+        The multiarch triplet must come from dpkg-architecture so it matches the target.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -135,6 +155,7 @@ class SyntheticRepairTests(unittest.TestCase):
             )
 
     def test_debian_multiarch_cmake_package_path_uses_target_triplet(self) -> None:
+        """Check that a CMake package directory passed in debian/rules gets the target triplet."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -176,6 +197,11 @@ class SyntheticRepairTests(unittest.TestCase):
             )
 
     def test_multiarch_repair_discovers_renamed_unsigned_digest_chain(self) -> None:
+        """Check that the multiarch fix also ports the signed-char digest code it depends on.
+
+        The generator, cache key, source and header use renamed files, so the rule must
+        find the chain by content rather than by known file names.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -249,6 +275,10 @@ class SyntheticRepairTests(unittest.TestCase):
             self.assertIn("ArrayRef<unsigned char>", header.read_text(encoding="utf-8"))
 
     def test_rocm_companion_backport_fails_closed_when_source_shape_is_incomplete(self) -> None:
+        """Check that only debian/rules changes when the digest code is not in the expected shape.
+
+        A partial backport could leave the source unable to compile, so it is skipped.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -287,6 +317,10 @@ class SyntheticRepairTests(unittest.TestCase):
             self.assertIn("digest_char", generator.read_text(encoding="utf-8"))
 
     def test_debian_multiarch_install_manifests_require_compat_13_and_log_evidence(self) -> None:
+        """Check that .install files named in dh_install warnings get ${DEB_HOST_MULTIARCH}.
+
+        This needs debhelper compat 13, and a manifest the log never mentions stays as is.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -337,6 +371,10 @@ class SyntheticRepairTests(unittest.TestCase):
             self.assertIn("x86_64-linux-gnu", unobserved_manifest.read_text(encoding="utf-8"))
 
     def test_debian_multiarch_install_manifest_is_not_rewritten_before_compat_13(self) -> None:
+        """Check that .install files are left alone under debhelper compat 12.
+
+        Variable substitution in .install files only works from compat 13 onwards.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             metadata = json.dumps(
@@ -370,6 +408,10 @@ class SyntheticRepairTests(unittest.TestCase):
             self.assertIn("x86_64-linux-gnu", manifest.read_text(encoding="utf-8"))
 
     def test_every_synthetic_case_selects_expected_safe_repair_family(self) -> None:
+        """Check that each of the 16 cases in dev/synthetic_cases picks its expected repair family.
+
+        Cases that expect no_safe_fix must change nothing; the rest must edit the causal file.
+        """
         case_directories = sorted(path for path in SYNTHETIC_CASES.iterdir() if path.is_dir())
         self.assertEqual(len(case_directories), 16)
         for case_directory in case_directories:
@@ -395,6 +437,10 @@ class SyntheticRepairTests(unittest.TestCase):
                     self.assertIn(metadata["expected_causal_file"], outcome.result.modified_paths)
 
     def test_deterministic_rules_do_not_key_on_fixture_ids(self) -> None:
+        """Check that no synthetic case directory name appears in the deterministic rules source.
+
+        The rules must work from log and file content, not from recognising test fixtures.
+        """
         source = (
             ROOT / "agents" / "archimedes" / "src" / "repair" / "deterministic.py"
         ).read_text(encoding="utf-8")
