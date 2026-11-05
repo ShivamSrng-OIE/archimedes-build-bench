@@ -113,6 +113,9 @@ _PATTERNS = (
     DiagnosticPattern(re.compile(r"rpmbuild.*\*\*\*", re.I), 10),
 )
 
+# Python logging records ("ERROR:root:...") in test output are not build diagnostics.
+_LOGGING_RECORD = re.compile(r"^(?:ERROR|WARNING|INFO|DEBUG):[\w.]+:", re.I)
+
 _NON_CAUSAL: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:^|[#\s])(?:ERROR|FAIL|XFAIL):\s*0(?:\s|$)", re.I),
     re.compile(r"LaTeX Warning:.*undefined references", re.I),
@@ -160,8 +163,7 @@ _NON_CAUSAL: tuple[re.Pattern[str], ...] = (
         re.I,
     ),
     re.compile(r"^checking (?:for|if|whether)\b", re.I),
-    # Python logging records ("ERROR:root:...") in test output are not build diagnostics.
-    re.compile(r"^(?:ERROR|WARNING|INFO|DEBUG):[\w.]+:", re.I),
+    _LOGGING_RECORD,
 )
 
 _OBS_NOISE: tuple[re.Pattern[str], ...] = (
@@ -177,6 +179,7 @@ _OBS_NOISE: tuple[re.Pattern[str], ...] = (
     re.compile(r"^[0-9a-f]{12} failed \"build \S+\" at ", re.I),
 )
 _NON_CAUSAL = _NON_CAUSAL + _OBS_NOISE
+_CONTEXT_NOISE = (*_OBS_NOISE, _LOGGING_RECORD)
 _REPEATED = re.compile(r" \[repeated \d+ times\]$")
 
 
@@ -195,7 +198,7 @@ def _classification_context(normalized: str) -> str:
     return "\n".join(
         line
         for line in normalized.splitlines()
-        if not any(pattern.search(_matchable(line)) for pattern in _OBS_NOISE)
+        if not any(pattern.search(_matchable(line)) for pattern in _CONTEXT_NOISE)
     )
 
 _FILE_PATTERNS = (
@@ -332,7 +335,7 @@ def analyze_build_log(raw_log: str) -> FailureAnalysis:
     family, secondaries, rationale = classify_failure(
         _matchable(diagnostic), _classification_context(normalized)
     )
-    signature = normalize_error_signature(diagnostic)
+    signature = normalize_error_signature(_matchable(diagnostic))
     causal_window = _causal_window(normalized, index, radius=5)
     frontier = frontier_from_family(
         family,

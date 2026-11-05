@@ -297,6 +297,24 @@ class HostedObsLogTests(unittest.TestCase):
         )
         self.assertEqual(analyze_build_log(log).family.value, "environment")
 
+    def test_python_logging_records_do_not_lend_a_family(self) -> None:
+        log = HOSTED_SETUP_NOISE + (
+            "[ 127s] ----- building foo.spec (user abuild)\n"
+            "[ 200s] ERROR:root:optional backend\n"
+            "[ 200s] something unusual happened\n"
+        )
+        analysis = analyze_build_log(log)
+        self.assertEqual(analysis.primary_diagnostic, "something unusual happened")
+        self.assertEqual(analysis.family.value, "unknown")
+
+    def test_signature_ignores_repetition_count(self) -> None:
+        line = "[ 140s] /var/tmp/rpm-tmp.X: line 1: ./a: No such file or directory\n"
+        head = "[ 127s] ----- building foo.spec (user abuild)\n"
+        three = analyze_build_log(head + line * 3)
+        five = analyze_build_log(head + line * 5)
+        self.assertEqual(three.frontier.error_signature, five.frontier.error_signature)
+        self.assertNotIn("repeated", three.frontier.error_signature)
+
     def test_hosted_hello_log_is_repaired(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

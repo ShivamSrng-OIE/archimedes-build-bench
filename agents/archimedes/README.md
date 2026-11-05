@@ -137,6 +137,10 @@ directory errors (also in plain rpmbuild logs), modern meson test names, and
 compiler OOM kills, ignores Python logging records in test output, and traces
 fatal hosted model failures before exiting nonzero.
 
+Version 0.2.19 also keeps Python logging records out of the failure-family
+context and computes error signatures without the `[repeated N times]` marker,
+so repeated identical failures compare as unchanged across attempts.
+
 ## System architecture
 
 The runtime is separated into small typed packages:

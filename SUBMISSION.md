@@ -20,16 +20,16 @@ changing a selection before the deadline; follow the current rules and
 confirmation UI for this release.
 
 ```text
-Agent version:       0.2.18 (recommended final)
+Agent version:       0.2.19 (recommended final)
 Archive:             dist/agent-submission.zip
-Archive bytes:       104,436
-SHA-256:             3b1bdebef8473757dfa7bf6b60d5648582153386593e0b2f9153f7734d7ead12
+Archive bytes:       104,545
+SHA-256:             4f3102f00622273afe401423e958fd6da99bd91e6e95372223c81be78ea92c9d
 Starter Kit:         0.1.0-rc.5, official ZIP SHA-256 1bd384af...dcfb56 verified
 Archive contents:    81 members, roots README.md, agent.yaml, requirements.lock, src
-Local Python tests:  184 passed, 2 skipped, 80 subtests passed (Python 3.11.15)
+Local Python tests:  187 passed, 2 skipped, 80 subtests passed (Python 3.11.15)
 Strict mypy:         no issues in 75 source files
 Official bb ready:   succeeded, hello 1/1 incl. final validation, same SHA-256
-                     (run 20261105T032357Z-36706, kit on WSL ext4 home);
+                     (run 20261105T034029Z-38440, kit on WSL ext4 home);
                      forensics: family packaging, "error: bad exit status ... (%build)"
 Archive audit:       81 members byte-identical to source, CRC ok, no symlinks
                      or secrets, all requirements pinned with ==
@@ -38,7 +38,7 @@ Forensics diff:      22 logs (16 synthetic, 4 Launchpad, 2 OBS) old vs new:
 Edge-case battery:   66/67 adversarial OBS/Debian logs plus 8 follow-up probes
                      pass (only remaining miss: an error past column 10,000
                      of a single line); 50-74 MB logs analysed in under 2 s
-Independent review:  7 subagent passes over two rounds (code review x2, edge cases,
+Independent review:  9 subagent passes over three rounds (code review x2, edge cases,
                      compliance x2, tests/typing/determinism, Linux kit x2);
                      reviewer cases 28/29, 90 captured test logs: only OBS and
                      2 intended non-OBS changes
@@ -54,7 +54,7 @@ Final confirmation:  pending
 Previous candidate:  0.2.15, SHA-256 5278102b...cbcacd, submission
                      20261105T013341Z-320e4be3, Hosted Smoke passed 1/1 (model
                      access, Agent execution, final validation). Its hosted
-                     agent.log showed the forensics defect fixed in 0.2.16-0.2.18, so do
+                     agent.log showed the forensics defect fixed in 0.2.16-0.2.19, so do
                      not confirm it.
 ```
 

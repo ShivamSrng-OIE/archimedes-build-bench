@@ -220,6 +220,56 @@ class HostedModelIntegrationTests(unittest.TestCase):
             thread.join(timeout=2)
         self.assertEqual(requests, ["/v1/chat/completions"])
 
+    def test_fatal_hosted_failure_is_traced_and_exits_nonzero(self) -> None:
+        class FailingHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(502)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *_: object) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FailingHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                repo, output = make_workspace(
+                    root,
+                    metadata=json.dumps({"case_id": "no-deterministic-repair"}),
+                    log="mysterious widget failure with no known cause\n",
+                )
+                (repo / "README").write_text("nothing to repair\n", encoding="utf-8")
+                token_file = root / "task-token"
+                token_file.write_text("secret-task-token", encoding="utf-8")
+                with patch.dict(os.environ, {
+                    "BB_WORKSPACE": str(root),
+                    "BB_MODEL_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1",
+                    "BB_MODEL_NAME": "organizer-alias",
+                    "BB_MODEL_TOKEN_FILE": str(token_file),
+                }, clear=True):
+                    exit_code = run()
+                self.assertNotEqual(exit_code, 0)
+                result = json.loads((output / "agent-result.json").read_text(encoding="utf-8"))
+                self.assertEqual(result["status"], "failed")
+                events = [
+                    json.loads(line)
+                    for line in (output / "execution-trace.jsonl").read_text(encoding="utf-8").splitlines()
+                ]
+                fatal = [e for e in events if e["action"] == "model_unavailable_fatal"]
+                self.assertEqual(len(fatal), 1)
+                self.assertIn("HTTP 502", fatal[0]["attributes"]["detail"])
+                for path in output.rglob("*"):
+                    if path.is_file():
+                        self.assertNotIn("secret-task-token", path.read_text(encoding="utf-8", errors="replace"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_injected_http_channel_repairs_case_and_sends_supported_request(self) -> None:
         captured: list[dict[str, object]] = []
 
