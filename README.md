@@ -54,7 +54,7 @@ as the final version:
 
 This is the previous portal selection, recorded before the new model-access
 requirement. The Agent source has since advanced to v0.2.20, which passed Hosted Smoke as
-submission `20261105T144419Z-2225a4ad` and is the version to confirm. The portal state
+submission `20261105T144419Z-2225a4ad`, now the confirmed final version. The portal state
 must be checked again before treating any version as finally confirmed.
 
 There is currently **no completed organizer Full Evaluation, official score, rank, or leaderboard
