@@ -48,13 +48,17 @@ Agent-image replay:  genuine OBS log with build-root noise repaired in mock,
                      simulated hosted (1 compliant request, token not leaked)
                      and hosted-endpoint-down modes
 Output-token limit:  max_completion_tokens=8192; no value is published on the
-                     submission, rules or FAQ pages (guide link returns 404,
-                     checked 4 Nov 2026), but the 0.2.15 Hosted Smoke made a
-                     successful official call with this exact request (portal
-                     "Model access: Passed"; trace model_critique_completed)
-Hosted Smoke:        pending
-New submission ID:   pending
-Final confirmation:  pending
+                     website (guide link returns 404), but both the 0.2.15 and
+                     0.2.19 Hosted Smoke runs made successful official calls
+                     with this exact request
+Hosted Smoke:        PASSED 1/1 on 4 Nov 2026 (model access, Agent execution,
+                     final validation). Hosted agent.log: failure_family
+                     packaging, signature "error: bad exit status from <temp>
+                     (%build)", model_critique_completed accepted=true,
+                     candidate_applied input/buildbench-hello.spec
+Submission ID:       20261105T035331Z-33f381b3 (portal SHA 4f3102f00622...)
+Final confirmation:  pending -- the participant must click "Confirm final
+                     version" on the v0.2.19 row before 13 Nov 2026 (UTC+8)
 
 Previous candidate:  0.2.15, SHA-256 5278102b...cbcacd, submission
                      20261105T013341Z-320e4be3, Hosted Smoke passed 1/1 (model

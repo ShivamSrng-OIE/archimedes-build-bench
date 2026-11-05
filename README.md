@@ -25,8 +25,9 @@ as the primary failure instead of the `%build` error. The current package is
 `4f3102f00622273afe401423e958fd6da99bd91e6e95372223c81be78ea92c9d`, built by the
 official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation;
 kit run from the WSL ext4 home). The Python suite passed (187 tests, 2 skipped)
-and strict mypy is clean. Upload, the `0.2.19` Hosted Smoke Test, and final
-confirmation in the portal remain to be done. See
+and strict mypy is clean. It was uploaded as submission `20261105T035331Z-33f381b3` and passed the
+Hosted Smoke Test 1/1 on 4 November 2026; only the participant's final
+confirmation in the portal remains. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
 
 The organizer's [model-access guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)
