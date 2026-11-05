@@ -15,18 +15,18 @@ runs the target build.
 
 ## Current preparation state (4 November 2026 EDT)
 
-Archimedes `0.2.15` uses the organizer's injected `BB_MODEL_BASE_URL`,
-`BB_MODEL_NAME`, and `BB_MODEL_TOKEN_FILE`. The current package is
-[`dist/agent-submission.zip`](dist/agent-submission.zip), 102,003 bytes, SHA-256
-`5278102b2e6e2a48170169373d27a5b01c2cffd4bda592c64f319c6d63fbcacd`, built by the
-official Starter Kit `0.1.0-rc.5` (`bb check` and `bb package` passed; kit ZIP
-checksum matches the published release). The full Python suite passed (157 tests,
-2 skipped), and the Agent repaired `hello` inside the official Agent image in both
-mock and simulated hosted-model modes, including with the model endpoint down.
-The official `bb ready` also succeeded (`hello` 1/1 with final validation, same
-SHA-256) once the kit was run from the WSL ext4 home rather than the `nodev`
-`/tmp`. Upload, the current Hosted Smoke Test,
-and final reconfirmation in the portal remain to be done. See
+Archimedes `0.2.16` is the recommended final version. It keeps the `0.2.15`
+hosted-model support (`BB_MODEL_BASE_URL`, `BB_MODEL_NAME`,
+`BB_MODEL_TOKEN_FILE`) and fixes failure forensics on hosted Validator logs: the
+`0.2.15` Hosted Smoke (`20261105T013341Z-320e4be3`, passed 1/1) showed that the
+Agent chose OBS build-root noise (`ERROR: not all operations were successful.`)
+as the primary failure instead of the `%build` error. The current package is
+[`dist/agent-submission.zip`](dist/agent-submission.zip), 102,754 bytes, SHA-256
+`3107172d1c90816b2edb746f62e5a5bde3a77053796a1de2323570921d202c33`, built by the
+official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation;
+kit run from the WSL ext4 home). The Python suite passed (163 tests, 2 skipped)
+and strict mypy is clean. Upload, the `0.2.16` Hosted Smoke Test, and final
+confirmation in the portal remain to be done. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
 
 The organizer's [model-access guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)

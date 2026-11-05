@@ -5,7 +5,7 @@ historical v0.2.14 record. The current 21 October 2026 update is in
 [`SUBMISSION.md`](SUBMISSION.md): the organizer published model-access settings,
 Starter Kit `0.1.0-rc.5`, a new Hosted Smoke requirement, and irreversible
 final reconfirmation by the end of 13 November 2026, Beijing time. The new
-v0.2.15 package (SHA-256 5278102b...cbcacd, 4 November 2026) is prepared locally; portal qualification is pending.
+v0.2.15 package (SHA-256 5278102b...cbcacd) passed Hosted Smoke on 4 November 2026 as submission 20261105T013341Z-320e4be3; v0.2.16 (SHA-256 3107172d...202c33) fixes hosted-log forensics and is the recommended final version, pending upload and Hosted Smoke.
 
 ## Current conclusion
 

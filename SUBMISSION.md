@@ -20,23 +20,26 @@ changing a selection before the deadline; follow the current rules and
 confirmation UI for this release.
 
 ```text
-Agent version:       0.2.15
+Agent version:       0.2.16 (recommended final)
 Archive:             dist/agent-submission.zip
-Archive bytes:       102,003
-SHA-256:             5278102b2e6e2a48170169373d27a5b01c2cffd4bda592c64f319c6d63fbcacd
+Archive bytes:       102,754
+SHA-256:             3107172d1c90816b2edb746f62e5a5bde3a77053796a1de2323570921d202c33
 Starter Kit:         0.1.0-rc.5, official ZIP SHA-256 1bd384af...dcfb56 verified
-Static check:        passed (81 files, 290,444 bytes)
-Model example check: passed (11 synthetic tests, no official model call)
-Local Python tests:  157 passed, 2 skipped, 59 subtests passed (Python 3.11.15)
+Archive contents:    81 members, roots README.md, agent.yaml, requirements.lock, src
+Local Python tests:  163 passed, 2 skipped, 59 subtests passed (Python 3.11.15)
 Strict mypy:         no issues in 75 source files
-Archive audit:       4 permitted roots, 81 members identical to source, no
-                     caches, secrets, symlinks, traversal; CRC test passed
-Agent-image replay:  hello repaired (mock; simulated hosted; hosted endpoint down)
 Official bb ready:   succeeded, hello 1/1 incl. final validation, same SHA-256
-                     (run 20261105T004659Z-30764, kit on WSL ext4 home)
+                     (run 20261105T023758Z-31715, kit on WSL ext4 home);
+                     forensics: family packaging, "bad exit status ... (%build)"
 Hosted Smoke:        pending
 New submission ID:   pending
-Final reconfirmation: pending
+Final confirmation:  pending
+
+Previous candidate:  0.2.15, SHA-256 5278102b...cbcacd, submission
+                     20261105T013341Z-320e4be3, Hosted Smoke passed 1/1 (model
+                     access, Agent execution, final validation). Its hosted
+                     agent.log showed the forensics defect fixed in 0.2.16, so do
+                     not confirm it.
 ```
 
 ### 4 November 2026 recheck

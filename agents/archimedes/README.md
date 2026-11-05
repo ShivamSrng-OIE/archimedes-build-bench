@@ -114,6 +114,13 @@ Completions fields, checks normal completion and refusal, and records a model
 critique before applying a deterministic hosted repair. It fails with a
 nonzero exit and a redacted diagnostic when hosted model access is unusable.
 
+Version 0.2.16 reads Open Build Service logs the way the hosted Validator
+writes them. It strips the `[  NNs]` elapsed prefix, ignores build-root
+preparation noise (chkstat ownership warnings and failed `%post` scriptlets),
+and prefers diagnostics after the `----- building ... (user abuild)` marker,
+falling back to preparation-phase errors such as unresolvable dependencies
+when the build never starts.
+
 ## System architecture
 
 The runtime is separated into small typed packages:

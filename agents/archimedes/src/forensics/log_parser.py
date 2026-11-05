@@ -15,6 +15,11 @@ _ANSI = re.compile(r"\x1b(?:[@-_][0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 _TIMESTAMP = re.compile(
     r"^(?:\[)?(?:\d{4}-\d{2}-\d{2}[T ][0-9:.+Z-]+|\d{2}:\d{2}:\d{2})(?:\])?\s*"
 )
+# Open Build Service logs prefix every line with elapsed seconds, e.g. "[   43s] ".
+_OBS_ELAPSED = re.compile(r"^\[\s*\d+s\]\s?")
+# OBS prints this marker once the build root is ready and rpmbuild starts. Diagnostics
+# before it come from preparing the build root, so a failure inside the build wins over them.
+_OBS_BUILD_START = re.compile(r"^-{3,}\s+building\s+\S+\s+\(user\s+\S+\)", re.I)
 _PREFIX = re.compile(r"^(?:stdout|stderr|error|warning)\s*[|:]\s*", re.IGNORECASE)
 
 
@@ -67,6 +72,7 @@ _PATTERNS = (
     DiagnosticPattern(re.compile(r"(?:^|\s)CMake Error(?: at|:)", re.I), 98),
     DiagnosticPattern(re.compile(r"(?:undefined reference|undefined symbol)", re.I), 90),
     DiagnosticPattern(re.compile(r"(?:cannot find -l|library not found|missing package)", re.I), 88),
+    DiagnosticPattern(re.compile(r"(?:unresolvable|nothing provides \S+)", re.I), 92),
     DiagnosticPattern(re.compile(r"configure:(?: error|.*failed)", re.I), 86),
     DiagnosticPattern(re.compile(r"(?:^FAIL:|^FAILED\b|Failed test|failed \d+ tests?|error: test failed|Illegal instruction|Segmentation fault|differ: byte)", re.I), 84),
     DiagnosticPattern(re.compile(r"(?:reference .*not found in the current environment|makes inconsistent assumptions over library)", re.I), 82),
@@ -126,6 +132,12 @@ _NON_CAUSAL = (
         re.I,
     ),
     re.compile(r"^checking (?:for|if|whether)\b", re.I),
+    # Noise from OBS build-root preparation on hosted Validators (chkstat ownership
+    # checks and package %post scriptlets) that does not stop the build.
+    re.compile(r"^ERROR: not all operations were successful\.?$", re.I),
+    re.compile(r"has unexpected owner \(\d+\)\. Refusing to correct", re.I),
+    re.compile(r"^(?:warning:\s*)?%(?:pre|post)(?:un|trans)?\([^)]*\) scriptlet failed", re.I),
+    re.compile(r"^can't open /etc/polkit-1/", re.I),
 )
 
 _FILE_PATTERNS = (
@@ -157,7 +169,7 @@ def normalize_log(raw_log: str) -> str:
     repetitions = 0
     for raw in raw_log.splitlines():
         line = _ANSI.sub("", raw).replace("\x00", "")[:10_000]
-        line = _PREFIX.sub("", _TIMESTAMP.sub("", line)).rstrip()
+        line = _PREFIX.sub("", _TIMESTAMP.sub("", _OBS_ELAPSED.sub("", line))).rstrip()
         if line == previous:
             repetitions += 1
             continue
@@ -172,25 +184,46 @@ def normalize_log(raw_log: str) -> str:
     return "\n".join(cleaned)
 
 
+def _obs_build_start(lines: list[str]) -> int:
+    for index, line in enumerate(lines):
+        if _OBS_BUILD_START.search(line):
+            return index
+    return 0
+
+
 def identify_primary_diagnostic(normalized_log: str) -> tuple[str, int]:
     """Choose an early high-causality diagnostic instead of a final cascade line."""
+    lines = normalized_log.splitlines()
+    start = _obs_build_start(lines)
+    if start:
+        found = _best_diagnostic(lines, start)
+        if found is not None:
+            return found
+    found = _best_diagnostic(lines, 0)
+    if found is not None:
+        return found
+    if lines:
+        return lines[-1], len(lines) - 1
+    return "", 0
+
+
+def _best_diagnostic(lines: list[str], start: int) -> tuple[str, int] | None:
     best_line = ""
     best_score = -1
     best_index = 0
-    lines = normalized_log.splitlines()
-    for index, line in enumerate(lines):
+    for index in range(start, len(lines)):
+        line = lines[index]
         if any(pattern.search(line) for pattern in _NON_CAUSAL):
             continue
         for pattern in _PATTERNS:
             if pattern.regex.search(line):
-                early_bonus = max(0, 20 - index // 20)
+                early_bonus = max(0, 20 - (index - start) // 20)
                 score = pattern.causal_weight + early_bonus
                 if score > best_score:
                     best_line, best_score, best_index = line, score, index
                 break
-    if not best_line and lines:
-        best_index = max(0, len(lines) - 1)
-        best_line = lines[best_index]
+    if not best_line:
+        return None
     return best_line, best_index
 
 
