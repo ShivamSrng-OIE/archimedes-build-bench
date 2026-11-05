@@ -54,7 +54,8 @@ as the final version:
 | SHA-256 | `714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed` |
 
 This is the previous portal selection, recorded before the new model-access
-requirement. The Agent source has since advanced to v0.2.15. The portal state
+requirement. The Agent source has since advanced to v0.2.19, which passed Hosted Smoke as
+submission `20261105T035331Z-33f381b3` and is the version to confirm. The portal state
 must be checked again before treating any version as finally confirmed.
 
 There is currently **no completed organizer Full Evaluation, official score, rank, or leaderboard
@@ -357,7 +358,7 @@ current Hosted Smoke and final portal confirmation are attested for this ZIP
 digest. The local process receives no official model credentials; do not
 invent values or store credentials to make an advisory check green.
 
-Do not casually regenerate the currently selected v0.2.14 artifact. For any future version, use a
+Do not casually regenerate the historical v0.2.14 or current v0.2.19 artifacts. For any future version, use a
 new semantic Agent version, preserve the previous digest and portal ID, run the full gate, and upload
 only the newly frozen ZIP after explicit release review.
 
