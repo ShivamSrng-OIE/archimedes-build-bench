@@ -24,7 +24,7 @@ Agent version:       0.2.20 (CONFIRMED final)
 Archive:             dist/agent-submission.zip
 Archive bytes:       107,176
 SHA-256:             2cb11d01605bf25ea9a1dd82c0d3c5acc8f5057c5d08c48bb32d2990e006764b
-Source commit:       2cb14ff
+Source commit:       eede689
 Starter Kit:         0.1.0-rc.5 (WSL ext4 home)
 Archive contents:    81 members, roots README.md, agent.yaml, requirements.lock, src
 Local Python tests:  200 passed (python:3.11.9-slim-bookworm); 200 passed,
@@ -105,7 +105,7 @@ Submission ID:   20261003T193341Z-1c80de94
 Portal status:   Qualified; Final version selected
 Hosted Smoke:    hello passed 1/1, including clean-patch final validation
 Selected:        4 October 2026 at 10:57 AM EDT
-Source commit:   093b7f2
+Source commit:   66dc216
 Archive:         dist/agent-submission-v0.2.14-ready.zip
 Archive bytes:   100,092
 SHA-256:         714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
@@ -130,7 +130,7 @@ Agent version:   0.2.14
 Starter Kit:     0.1.0-rc.3
 Official ready:  succeeded
 Ready run ID:    20261003T193000Z-v0214-final
-Source commit:   093b7f2
+Source commit:   66dc216
 Archive:         dist/agent-submission-v0.2.14-ready.zip
 Archive bytes:   100,092
 SHA-256:         714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed
@@ -146,7 +146,7 @@ official runner was not modified to bypass them.
 
 The full local suite (149 passed, two platform-specific symlink tests skipped, 56 subtests), Ruff,
 strict typing over 75 source files, bytecode compilation, archive/source comparison, secret scan,
-and official readiness are green at release commit `093b7f2`. Coverage and Bandit were not installed
+and official readiness are green at release commit `66dc216`. Coverage and Bandit were not installed
 in the final Python environment, so no v0.2.14 claim is made for those optional checks. All 200 public
 source replays completed. The four modified public worktrees reproduce the same nine file digests as
 the v0.2.11 repairs that already received target-build validation. The v0.2.14 focused Worktree
