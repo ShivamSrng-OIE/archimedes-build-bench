@@ -1,8 +1,8 @@
 # Archimedes release, submission, and evaluation record
 
-Last checked: **4 November 2026 EDT**
+Last checked: **5 November 2026 EDT**
 
-## Current v0.2.15 preparation
+## Current release (v0.2.20)
 
 The [current participation guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)
 now specifies organizer-injected `BB_MODEL_BASE_URL`, `BB_MODEL_NAME`, and
@@ -20,51 +20,48 @@ changing a selection before the deadline; follow the current rules and
 confirmation UI for this release.
 
 ```text
-Agent version:       0.2.19 (recommended final)
+Agent version:       0.2.20 (recommended final)
 Archive:             dist/agent-submission.zip
-Archive bytes:       104,545
-SHA-256:             4f3102f00622273afe401423e958fd6da99bd91e6e95372223c81be78ea92c9d
-Starter Kit:         0.1.0-rc.5, official ZIP SHA-256 1bd384af...dcfb56 verified
+Archive bytes:       107,176
+SHA-256:             2cb11d01605bf25ea9a1dd82c0d3c5acc8f5057c5d08c48bb32d2990e006764b
+Source commit:       2cb14ff
+Starter Kit:         0.1.0-rc.5 (WSL ext4 home)
 Archive contents:    81 members, roots README.md, agent.yaml, requirements.lock, src
-Local Python tests:  187 passed, 2 skipped, 80 subtests passed (Python 3.11.15)
+Local Python tests:  200 passed (python:3.11.9-slim-bookworm); 200 passed,
+                     2 skipped on Windows Python 3.14
 Strict mypy:         no issues in 75 source files
 Official bb ready:   succeeded, hello 1/1 incl. final validation, same SHA-256
-                     (run 20261105T034029Z-38440, kit on WSL ext4 home);
-                     forensics: family packaging, "error: bad exit status ... (%build)"
-Archive audit:       81 members byte-identical to source, CRC ok, no symlinks
-                     or secrets, all requirements pinned with ==
-Forensics diff:      22 logs (16 synthetic, 4 Launchpad, 2 OBS) old vs new:
-                     only the 2 OBS logs changed, both as intended
-Edge-case battery:   66/67 adversarial OBS/Debian logs plus 8 follow-up probes
-                     pass (only remaining miss: an error past column 10,000
-                     of a single line); 50-74 MB logs analysed in under 2 s
-Independent review:  9 subagent passes over three rounds (code review x2, edge cases,
-                     compliance x2, tests/typing/determinism, Linux kit x2);
-                     reviewer cases 28/29, 90 captured test logs: only OBS and
-                     2 intended non-OBS changes
-Hosted failure mode: model HTTP errors keep the validated deterministic repair
-                     and trace the redacted HTTP status (token never logged)
-Agent-image replay:  genuine OBS log with build-root noise repaired in mock,
-                     simulated hosted (1 compliant request, token not leaked)
-                     and hosted-endpoint-down modes
-Output-token limit:  max_completion_tokens=8192; no value is published on the
-                     website (guide link returns 404), but both the 0.2.15 and
-                     0.2.19 Hosted Smoke runs made successful official calls
-                     with this exact request
-Hosted Smoke:        PASSED 1/1 on 4 Nov 2026 (model access, Agent execution,
+                     (run 20261105T144127Z-46617); evidence in
+                     runs/ready/20261105T144127Z-v0220/
+New in 0.2.20:       architecture-aware Debian symbols repair (dpkg-gensymbols
+                     "symbols disappeared"): tags exactly the reported symbols
+                     arch=!<target>; fails closed otherwise
+Development replay:  all 200 public Cases (dataset SHA-256 94372a28...bd675d,
+                     re-downloaded 5 Nov 2026) completed; 15 modified = the 4
+                     earlier repairs (9 files byte-identical to v0.2.14) + 11 of
+                     the 12 symbols failures; no other Case changed. jsonnet is
+                     deliberately refused (547/1064 symbols vanished).
+dpkg semantics:      each edited symbols file checked with dpkg's own
+                     Dpkg::Shlibs::SymbolFile get_lost_symbols: target failure
+                     reproduced before and gone after; other-arch checks unchanged
+Rules check:         symbols are corrected per architecture, not suppressed
+                     (no DPKG_GENSYMBOLS_CHECK_LEVEL change), per Rules "do not
+                     suppress failures"
+Hosted Smoke:        PASSED 1/1 on 5 Nov 2026 (model access, Agent execution,
                      final validation). Hosted agent.log: failure_family
-                     packaging, signature "error: bad exit status from <temp>
-                     (%build)", model_critique_completed accepted=true,
-                     candidate_applied input/buildbench-hello.spec
-Submission ID:       20261105T035331Z-33f381b3 (portal SHA 4f3102f00622...)
+                     packaging, "(%build)" signature, model_critique_completed
+                     accepted=true, candidate_applied input/buildbench-hello.spec,
+                     no model errors
+Submission ID:       20261105T144419Z-2225a4ad (portal SHA 2cb11d01605b...)
 Final confirmation:  pending -- the participant must click "Confirm final
-                     version" on the v0.2.19 row before 13 Nov 2026 (UTC+8)
+                     version" on the v0.2.20 row before 13 Nov 2026 (UTC+8)
 
-Previous candidate:  0.2.15, SHA-256 5278102b...cbcacd, submission
-                     20261105T013341Z-320e4be3, Hosted Smoke passed 1/1 (model
-                     access, Agent execution, final validation). Its hosted
-                     agent.log showed the forensics defect fixed in 0.2.16-0.2.19, so do
-                     not confirm it.
+Previous candidate:  0.2.19, SHA-256 4f3102f0...a92c9d, submission
+                     20261105T035331Z-33f381b3, Hosted Smoke passed 1/1. Same
+                     behaviour except it lacks the symbols repair.
+Older candidate:     0.2.15, submission 20261105T013341Z-320e4be3; its hosted
+                     log showed the forensics defect fixed in 0.2.16-0.2.19, so
+                     do not confirm it.
 ```
 
 ### 4 November 2026 recheck

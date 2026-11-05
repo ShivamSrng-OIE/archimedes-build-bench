@@ -5,7 +5,7 @@ historical v0.2.14 record. The current 21 October 2026 update is in
 [`SUBMISSION.md`](SUBMISSION.md): the organizer published model-access settings,
 Starter Kit `0.1.0-rc.5`, a new Hosted Smoke requirement, and irreversible
 final reconfirmation by the end of 13 November 2026, Beijing time. The new
-v0.2.15 package (SHA-256 5278102b...cbcacd) passed Hosted Smoke on 4 November 2026 as submission 20261105T013341Z-320e4be3; v0.2.19 (SHA-256 4f3102f0...a92c9d) fixes hosted-log forensics and passed Hosted Smoke 1/1 on 4 November 2026 as submission 20261105T035331Z-33f381b3 and is the version to confirm as final.
+v0.2.15 package (SHA-256 5278102b...cbcacd) passed Hosted Smoke on 4 November 2026 as submission 20261105T013341Z-320e4be3; v0.2.19 (SHA-256 4f3102f0...a92c9d) fixes hosted-log forensics and passed Hosted Smoke 1/1 on 4 November 2026 as submission 20261105T035331Z-33f381b3; v0.2.20 (SHA-256 2cb11d01...6764b) adds the Debian symbols repair, passed Hosted Smoke 1/1 on 5 November 2026 as submission 20261105T144419Z-2225a4ad, and is the version to confirm as final.
 
 ## Conclusion as of 4 October 2026 (historical)
 
@@ -204,12 +204,12 @@ not Agent failures and were not bypassed by changing the official runner.
 ## Release discipline
 
 1. (Updated 5 November 2026) v0.2.14 submission `20261003T193341Z-1c80de94` is the previous
-   selection and needs reconfirmation. The version to confirm is v0.2.19, submission
-   `20261105T035331Z-33f381b3`; confirmation is irreversible and is the participant's own action.
+   selection and needs reconfirmation. The version to confirm is v0.2.20, submission
+   `20261105T144419Z-2225a4ad`; confirmation is irreversible and is the participant's own action.
 2. Upload only the exact official `bb ready` ZIP and compare its complete SHA-256 with the portal.
 3. Preserve static-check, Hosted Smoke, Development Validation, and organizer-evaluation evidence
    separately; never promote one evidence class into another.
 4. Re-audit live Rules, FAQ, Data, Timeline, and portal state immediately before final selection or
    organizer evaluation because published parameters can change.
-5. After confirming v0.2.19, wait for the organizer-run Full Evaluation; no participant start
+5. After confirming v0.2.20, wait for the organizer-run Full Evaluation; no participant start
    control or official score exists at the current audit time.

@@ -15,19 +15,18 @@ runs the target build.
 
 ## Current preparation state (4 November 2026 EDT)
 
-Archimedes `0.2.19` is the recommended final version. It keeps the `0.2.15`
-hosted-model support (`BB_MODEL_BASE_URL`, `BB_MODEL_NAME`,
-`BB_MODEL_TOKEN_FILE`) and fixes failure forensics on hosted Validator logs: the
-`0.2.15` Hosted Smoke (`20261105T013341Z-320e4be3`, passed 1/1) showed that the
-Agent chose OBS build-root noise (`ERROR: not all operations were successful.`)
-as the primary failure instead of the `%build` error. The current package is
-[`dist/agent-submission.zip`](dist/agent-submission.zip), 104,545 bytes, SHA-256
-`4f3102f00622273afe401423e958fd6da99bd91e6e95372223c81be78ea92c9d`, built by the
-official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation;
-kit run from the WSL ext4 home). The Python suite passed (187 tests, 2 skipped)
-and strict mypy is clean. It was uploaded as submission `20261105T035331Z-33f381b3` and passed the
-Hosted Smoke Test 1/1 on 4 November 2026; only the participant's final
-confirmation in the portal remains. See
+Archimedes `0.2.20` is the recommended final version. It keeps the hosted-model
+support and the OBS log forensics fixes of `0.2.15`-`0.2.19`, and adds an
+architecture-aware repair for Debian `dpkg-gensymbols` "symbols disappeared"
+failures (11 of the 12 such public Development Cases; 15 of 200 Cases are now
+modified, with the four earlier repairs byte-identical). The current package is
+[`dist/agent-submission.zip`](dist/agent-submission.zip), 107,176 bytes, SHA-256
+`2cb11d01605bf25ea9a1dd82c0d3c5acc8f5057c5d08c48bb32d2990e006764b`, built by the
+official Starter Kit `0.1.0-rc.5` `bb ready` (`hello` 1/1 with final validation).
+The Python suite passed (200 tests in the official Python 3.11.9 image) and strict
+mypy is clean. It was uploaded as submission `20261105T144419Z-2225a4ad` and
+passed the Hosted Smoke Test 1/1 on 5 November 2026; only the participant's final
+confirmation of the v0.2.20 row in the portal remains. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
 
 The organizer's [model-access guide](https://matrix.cstcloud.cn/build-bench/submission.html?lang=en#model-access)
@@ -54,8 +53,8 @@ as the final version:
 | SHA-256 | `714bec9725b99493af37b2ab4e9ea38c9d721ee1fda692aa30eb9c2a7bf9d7ed` |
 
 This is the previous portal selection, recorded before the new model-access
-requirement. The Agent source has since advanced to v0.2.19, which passed Hosted Smoke as
-submission `20261105T035331Z-33f381b3` and is the version to confirm. The portal state
+requirement. The Agent source has since advanced to v0.2.20, which passed Hosted Smoke as
+submission `20261105T144419Z-2225a4ad` and is the version to confirm. The portal state
 must be checked again before treating any version as finally confirmed.
 
 There is currently **no completed organizer Full Evaluation, official score, rank, or leaderboard
@@ -358,7 +357,7 @@ current Hosted Smoke and final portal confirmation are attested for this ZIP
 digest. The local process receives no official model credentials; do not
 invent values or store credentials to make an advisory check green.
 
-Do not casually regenerate the historical v0.2.14 or current v0.2.19 artifacts. For any future version, use a
+Do not casually regenerate the historical v0.2.14 or current v0.2.20 artifacts. For any future version, use a
 new semantic Agent version, preserve the previous digest and portal ID, run the full gate, and upload
 only the newly frozen ZIP after explicit release review.
 
