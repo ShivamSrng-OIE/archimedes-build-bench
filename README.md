@@ -23,8 +23,9 @@ official Starter Kit `0.1.0-rc.5` (`bb check` and `bb package` passed; kit ZIP
 checksum matches the published release). The full Python suite passed (157 tests,
 2 skipped), and the Agent repaired `hello` inside the official Agent image in both
 mock and simulated hosted-model modes, including with the model endpoint down.
-Local `bb ready` still cannot validate on this Docker Desktop host because the
-nested OBS build cannot open `/dev/null`. Upload, the current Hosted Smoke Test,
+The official `bb ready` also succeeded (`hello` 1/1 with final validation, same
+SHA-256) once the kit was run from the WSL ext4 home rather than the `nodev`
+`/tmp`. Upload, the current Hosted Smoke Test,
 and final reconfirmation in the portal remain to be done. See
 [`SUBMISSION.md`](SUBMISSION.md) for the exact evidence and next steps.
 

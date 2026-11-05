@@ -32,7 +32,8 @@ Strict mypy:         no issues in 75 source files
 Archive audit:       4 permitted roots, 81 members identical to source, no
                      caches, secrets, symlinks, traversal; CRC test passed
 Agent-image replay:  hello repaired (mock; simulated hosted; hosted endpoint down)
-Local ready:         Validator setup fails on Docker Desktop (/dev/null denied)
+Official bb ready:   succeeded, hello 1/1 incl. final validation, same SHA-256
+                     (run 20261105T004659Z-30764, kit on WSL ext4 home)
 Hosted Smoke:        pending
 New submission ID:   pending
 Final reconfirmation: pending
@@ -51,17 +52,21 @@ critique of a deterministic repair no longer aborts the run, and a critique
 rejection falls back to the deterministic candidate when the model offers no
 admissible alternative. Both paths have unit tests.
 
-`bb doctor` now passes and Docker reproduces the initial failure stage, but the
-Validator's nested OBS chroot still cannot open `/dev/null`. The resulting log
-therefore does not contain the intentional `hello` error, and the Agent correctly
-declines to edit. The official runner was not modified. Instead, the exact Agent
-was replayed in `python:3.11.9-slim-bookworm` with the official hardening flags,
-the real Case worktree, and a failure tail matching the spec's `%build` abort.
-It removed exactly the two intentional lines. In hosted mode it sent one
-`/v1/chat/completions` request containing only `model`, `messages`, `store: false`,
-and `max_completion_tokens`, with the bearer token read from the injected file.
-The token never appeared in logs or output. This is replay evidence, not organizer
-validation; Hosted Smoke remains the qualification gate.
+The earlier local `bb ready` failures (`/dev/null: Permission denied` in the
+Validator's nested OBS chroot) were caused by running the kit from WSL's `/tmp`,
+which is mounted `nodev`. With the unmodified rc.5 kit extracted under the WSL
+ext4 home directory, the official `./bb ready --agent ./agents/archimedes --json`
+exited 0 with `"status": "succeeded"`: `hello` reproduced its initial failure, the
+Agent completed, the canonical patch was generated, and final validation
+succeeded (1/1). The ready artifact's SHA-256 equals the `dist/` archive above.
+Evidence is retained under `runs/ready/20261105T004659Z-v0215/`.
+
+The exact Agent was also replayed in `python:3.11.9-slim-bookworm` with a
+simulated hosted endpoint. It sent one `/v1/chat/completions` request containing
+only `model`, `messages`, `store: false`, and `max_completion_tokens`, with the
+bearer token read from the injected file; the token never appeared in logs or
+output. With the endpoint unreachable it still applied the repair. Hosted Smoke
+remains the qualification gate for the official model call.
 
 ## Historical v0.2.14 selection (requires new validation)
 
